@@ -3745,14 +3745,34 @@ class SpikeSorter(QtGui.QMainWindow):
     ########################################################################################################
 
     def SliceDraw(self):
+        
         sender = self.sender()
+        fig = self.ChanTab['WavesFigure'].figure
+        ax = fig.axes[0]
+        
         if sender.objectName() == 'Slice1':
             self.Slice1Ln.set_xdata(sender.value())
-            self.ChanTab['WavesFigure'].figure.axes[0].draw_artist(self.Slice1Ln)
+            
         elif sender.objectName() == 'Slice2':
             self.Slice2Ln.set_xdata(sender.value())
-            self.ChanTab['WavesFigure'].figure.axes[0].draw_artist(self.Slice2Ln)
-
+        
+        ax.draw_artist(ax.patch)
+        
+        for k in ax.get_lines():
+            ax.draw_artist(k)
+            
+        for k in ax.get_xgridlines():
+            ax.draw_artist(k)
+            
+        for k in ax.get_ygridlines():
+            ax.draw_artist(k)
+            
+        ax.draw_artist(ax.spines['top'])
+        ax.draw_artist(ax.spines['left'])
+        fig.canvas.update()
+        fig.canvas.flush_events()
+        #self.ChanTab['WavesFigBG'] = fig.canvas.copy_from_bbox(ax.bbox)
+            
     ########################################################################################################
 
     def ChangeCurrentUnit_proc(self):
@@ -3793,7 +3813,7 @@ if __name__ == '__main__':
     else:
         app = QtGui.QApplication.instance()
     spikesorter = SpikeSorter()
-    sys.exit(app.exec_())
+    #sys.exit(app.exec_())
 
 
 ############################################################################################################
