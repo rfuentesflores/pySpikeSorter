@@ -1806,10 +1806,12 @@ class SpikeSorter(QtGui.QMainWindow):
             if naxes == 0:
                 ax1 = self.ChanTab['FeaturesFig'].figure.add_subplot(111)
                 ax1.set_axis_bgcolor('k')
+                
             elif naxes == 1:
                 ax1 = self.ChanTab['FeaturesFig'].figure.axes[0]
                 ax1.cla()
                 ax1.set_axis_bgcolor('k')
+                
             elif naxes >= 2:
                 self.ChanTab['FeaturesFig'].figure.clear()
                 ax1 = self.ChanTab['FeaturesFig'].figure.add_subplot(111)
@@ -1820,10 +1822,12 @@ class SpikeSorter(QtGui.QMainWindow):
             if naxes == 0:
                 ax1 = self.ChanTab['FeaturesFig'].figure.add_subplot(121)
                 ax2 = self.ChanTab['FeaturesFig'].figure.add_subplot(122, sharex=ax1, sharey=ax1)
+                
             elif naxes == 1:
                 self.ChanTab['FeaturesFig'].figure.clear()
                 ax1 = self.ChanTab['FeaturesFig'].figure.add_subplot(121)
                 ax2 = self.ChanTab['FeaturesFig'].figure.add_subplot(122, sharex=ax1, sharey=ax1)
+                
             elif naxes == 2:
                 ax1 = self.ChanTab['FeaturesFig'].figure.axes[0]
                 ax2 = self.ChanTab['FeaturesFig'].figure.axes[1]
@@ -1889,7 +1893,8 @@ class SpikeSorter(QtGui.QMainWindow):
                     ax1.plot(x[indx,:], y[indx,:], ',', label = 'data_'+leaf._v_name,
                              rasterized = True,
                              color = self.UnitColors[int(unit.group()),:],
-                             mec = self.UnitColors[int(unit.group()),:])
+                             mec = self.UnitColors[int(unit.group()),:],
+                             zorder = 10)
 
                     # add unit to the tab widget
                     self.UnitsTable_AddUnit(leaf._v_name)
@@ -1904,7 +1909,8 @@ class SpikeSorter(QtGui.QMainWindow):
                 indx = range(lx)
             ax1.plot(x[indx], y[indx], ',', color = [.5, .5, .5]
                      , label = 'data_Unsorted',
-                     rasterized = True)
+                     rasterized = True,
+                     zorder = 10)
 
         # plot a specific unit
         elif re.search('Unit', What2Plot):
@@ -1919,7 +1925,8 @@ class SpikeSorter(QtGui.QMainWindow):
             ax1.plot(x[indx], y[indx], ',', label = 'data_'+What2Plot,
                      rasterized = True,
                      color = self.UnitColors[int(unit),:],
-                     mec = self.UnitColors[int(unit),:])
+                     mec = self.UnitColors[int(unit),:],
+                     zorder = 10)
 
             # add unit to the tab widget
             self.UnitsTable_AddUnit(What2Plot)
@@ -1932,8 +1939,8 @@ class SpikeSorter(QtGui.QMainWindow):
             ax1.autoscale_view(True,True,True)
 
         # vertical and horizontal lines @ x and y = 0
-        ax1.axvline(0, color=[.5, .5, .5])
-        ax1.axhline(0, color=[.5, .5, .5])
+        ax1.axvline(0, color=[.5, .5, .5], zorder = 0)
+        ax1.axhline(0, color=[.5, .5, .5], zorder = 0)
 
         # create KDTree objet from the selected data for fast search
         self.XYData = cKDTree(np.array([x,y]).transpose())
@@ -2429,13 +2436,12 @@ class SpikeSorter(QtGui.QMainWindow):
         # replot the features
         self.PlotFeatures()
 
+        # replot waveforms
+        self.plot_unit_waveforms()
+        
         # replot the unit avg waveform, histogram and autocorrelation
         self.PlotUnitFigure_proc()
-
-        '''
-        for k in intersect:
-            deleted.append(int(re.search('(?<=data_)[0-9]{3}', handles[k].get_label()).group()))
-            handles[k].remove()'''
+                
         eclick.inaxes.figure.canvas.draw()
 
         self.trimWaveformsRect.set_active(False)
@@ -2445,6 +2451,62 @@ class SpikeSorter(QtGui.QMainWindow):
 
     ########################################################################################################
 
+    def plot_unit_waveforms(self):
+        
+        # get unit name and number
+        unitName = str(self.ChanTab['UnitTabsWidget'].tabText(self.ChanTab['UnitTabsWidget'].currentIndex()))
+        unitNo   = int(re.search('(?<=Unit)[0-9]{2}', unitName).group())
+
+        # get axes handle and children labels
+        fig = self.ChanTab['WavesFigure'].figure
+        ax = fig.axes[0]
+        childrenLabels = [str(k.get_label()) for k in ax.get_children()]
+
+        # get the number of spikes to plot
+        nspikes = self.NSpikesSpin.value()
+
+        node = self.CurNode.__getattr__(self.CurUnitName)
+        nrows = node.Indx.nrows
+        
+        if nrows > nspikes:
+            unitIndx = node.Indx.read(start = 0, stop = nrows, step = nrows/nspikes)
+        else:
+            unitIndx = node.Indx.read()
+
+        # obtain the length of units to plot
+        n = len(unitIndx)
+
+        # create an array of Nones to append
+        nones = np.array(n*[None], ndmin=2).transpose()
+
+        # create the x indexes
+        Ts = np.tile(np.arange(self.WfSize),(n,1))
+        Ts = np.append(Ts, nones, axis = 1).reshape((n*(self.WfSize+1),))
+
+        # get the waveforms, append nones, and reshape it to a vector
+        Wf = self.CurNode.Waveforms[unitIndx,:]
+        Wf = np.append(Wf, nones, axis=1).reshape((n*(self.WfSize+1),))
+
+        # create the plot if it doesn't exists
+        if unitName not in childrenLabels:
+            ax.plot(Ts, Wf,
+                    color = self.UnitColors[unitNo,:],
+                    alpha = 0.7,
+                    label = unitName)
+
+        # if exists update the data
+        elif unitName in childrenLabels:
+            for k in self.ChanTab['WavesFigure'].figure.axes[0].get_lines():
+                if k.get_label() == self.CurUnitName:
+                    break
+
+            k.set_data(Ts, Wf)
+            k.set_visible(True)
+        
+        fig.canvas.draw()
+                
+    ########################################################################################################
+                
     def AddUnit_proc(self):
         ''' starts a lasso instance to draw a line around a ROI'''
         # check whether there is a channel ploted
@@ -2553,6 +2615,8 @@ class SpikeSorter(QtGui.QMainWindow):
                 del self.LassoCID
             return
 
+        self.KeepBtn.setCheckable(True)
+        self.KeepBtn.setChecked(True)
         self.lasso = matplotlib_widgets.MyLasso(event.inaxes, (event.xdata, event.ydata),
                                      self.LassoCallback_Keep, color = 'gray', lw=1)
         self.ChanTab['FeaturesFig'].figure.canvas.widgetlock(self.lasso)
@@ -2741,6 +2805,10 @@ class SpikeSorter(QtGui.QMainWindow):
         # test which points lay inside the polygon
         p = Path(self.verts).contains_points(self.XYData.data)
 
+        # change to not checked        
+        self.KeepBtn.setChecked(False)
+        self.KeepBtn.setCheckable(False)
+        
         # check how many points were selected
         if len(np.flatnonzero(p)) <= self.WfSize:
             print "Didn't doo anything: Too few points selected"
@@ -2787,6 +2855,9 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # replot the unit avg waveform, histogram and autocorrelation
         self.PlotUnitFigure_proc()
+        
+        # replot the waveforms
+        self.plot_unit_waveforms()
 
         # replot the features
         self.PlotFeatures()
@@ -3215,7 +3286,7 @@ class SpikeSorter(QtGui.QMainWindow):
         nspikes = self.NSpikesSpin.value()
 
         if state == 2: # if checked
-            nrows    = node .nrows
+            nrows    = node.nrows
             if nrows > nspikes:
                 unitIndx = node.read(start = 0, stop = nrows, step = nrows/nspikes)
             else:
