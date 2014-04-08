@@ -720,7 +720,7 @@ class SpikeSorter(QtGui.QMainWindow):
         self.Slice2Ln = ax.axvline(0, color=[.5, .5, .5], linestyle = '--')
         #ax.set_title('Raw Waveforms')
         ax.grid()
-        wavesfig.canvas.mpl_connect('draw_event',self.draw_callback)
+        wavesfig.canvas.mpl_connect('draw_event', self.draw_callback)
 
         ###### FEATURES PLOT WIDGET #################
 
@@ -810,7 +810,7 @@ class SpikeSorter(QtGui.QMainWindow):
         self.TimeScroll['Figure'].setMaximumHeight(QtGui.QApplication.desktop().availableGeometry().height()/6)
         self.TimeScroll['Ax'] = self.TimeScroll['Figure'].figure.add_subplot(111)
         self.TimeScroll['Ax'].set_axis_bgcolor('k')
-        self.TimeScroll['Ax'].set_ylim(-1500,1500)
+        self.TimeScroll['Ax'].set_ylim(-1500, 1500)
         self.TimeScroll['Ax'].set_xticklabels([])
         self.TimeScroll['Ax'].set_yticklabels([])
         self.TimeScroll['Ax'].set_axis_off()
@@ -1711,9 +1711,11 @@ class SpikeSorter(QtGui.QMainWindow):
 
         elif xlabel == 'Slice1':
             x = self.CurWaveforms[self.dataIndx, self.SliceSpBx1.value()]
+            x = x/100.0
 
         elif xlabel == 'Slice2':
             x = self.CurWaveforms[self.dataIndx, self.SliceSpBx2.value()]
+            x = x/100.0
 
         elif xlabel == 'Energy':
             x = np.sum(np.power(self.CurWaveforms[self.dataIndx,:], 2), axis=1)
@@ -1754,9 +1756,11 @@ class SpikeSorter(QtGui.QMainWindow):
 
         elif ylabel == 'Slice1':
             y = self.CurWaveforms[self.dataIndx, self.SliceSpBx1.value()]
+            y = y/100.0
 
         elif ylabel == 'Slice2':
             y = self.CurWaveforms[self.dataIndx, self.SliceSpBx2.value()]
+            y = y/100.0
 
         elif ylabel == 'Energy':
             y = np.sum(np.power(self.CurWaveforms[self.dataIndx,:], 2), axis=1)
@@ -2006,9 +2010,11 @@ class SpikeSorter(QtGui.QMainWindow):
 
         elif xlabel == 'Slice1':
             x = self.CurWaveforms[self.dataIndx, self.SliceSpBx1.value()]/100.0
+            x = x/100.0
 
         elif xlabel == 'Slice2':
             x = self.CurWaveforms[self.dataIndx, self.SliceSpBx2.value()]/100.0
+            x = x/100.0
 
         elif xlabel == 'Energy':
             x = np.sum(np.power(self.CurWaveforms[self.dataIndx,:], 2), axis=1)
@@ -2043,9 +2049,11 @@ class SpikeSorter(QtGui.QMainWindow):
 
         elif ylabel == 'Slice1':
             y = self.CurWaveforms[self.dataIndx, self.SliceSpBx1.value()]/100.0
+            y = y/100.0
 
         elif ylabel == 'Slice2':
             y = self.CurWaveforms[self.dataIndx, self.SliceSpBx2.value()]/100.0
+            y = y/100.0
 
         elif ylabel == 'Energy':
             y = np.sum(np.power(self.CurWaveforms[self.dataIndx,:], 2), axis=1)
@@ -2079,9 +2087,11 @@ class SpikeSorter(QtGui.QMainWindow):
 
         elif zlabel == 'Slice1':
             z = self.CurWaveforms[self.dataIndx, self.SliceSpBx1.value()]/100.0
+            z = z/100.0
 
         elif zlabel == 'Slice2':
             z = self.CurWaveforms[self.dataIndx, self.SliceSpBx2.value()]/100.0
+            z = z/100.0
 
         elif zlabel == 'Energy':
             z = np.sum(np.power(self.CurWaveforms[self.dataIndx,:], 2), axis=1)
