@@ -3026,6 +3026,9 @@ class SpikeSorter(QtGui.QMainWindow):
         # replot the features
         self.PlotFeatures()
 
+        # replot the waveforms
+        self.plot_unit_waveforms()
+        
         # replot the unit avg waveform, histogram and autocorrelation
         self.PlotUnitFigure_proc()
 
@@ -3247,14 +3250,27 @@ class SpikeSorter(QtGui.QMainWindow):
         ##### PLOT AUTOCORRELATION #####
 
         ts = self.CurTs[p]
-        if ts.size > 1000: ts = ts[0:1000]
+        
+        time = 250000
+       
+        ts = ts[np.flatnonzero(ts < time)]
+        ts11 = np.tile(ts, (ts.size, 1))
+        ts22 = np.tile(ts, (ts.size, 1)).transpose()
+        x = ts11 - ts22
+        ac, lags = np.histogram(x.flatten(), bins = 100, range=(-500, 500), normed=True)
+        ac[np.flatnonzero(lags==0)] = 0.0
+        ax2.bar(lags[0:-1], ac, width = np.diff(lags)[0], edgecolor = 'none',
+            color = self.UnitColors[unitNo])
+
+        '''if ts.size > 1000: ts = ts[0:1000]
 
         ac, x = autocorr(ts, binSize = 20, Win = [0,10000],
                          mode = 'fft', Range = [-150, 150])
         ac[ac.argmax()] = 0
-        ax2.plot(x, ac, color = self.UnitColors[unitNo], lw = 2)
-        ax2.set_xlim(-600, 600)
-        ax2.set_ylim(0, ac.max())
+        ax2.plot(x, ac, color = self.UnitColors[unitNo], lw = 2)'''
+        
+        ax2.set_xlim(-500, 500)
+        #ax2.set_ylim(0, ac.max())
         ax2.tick_params(color = [.5, .5, .5], labelcolor=[.5, .5, .5])
         for k in ax2.spines.values(): k.set_edgecolor([.5, .5, .5])
         ax2.set_yticklabels([])
