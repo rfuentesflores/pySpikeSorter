@@ -1806,12 +1806,12 @@ class SpikeSorter(QtGui.QMainWindow):
             if naxes == 0:
                 ax1 = self.ChanTab['FeaturesFig'].figure.add_subplot(111)
                 ax1.set_axis_bgcolor('k')
-                
+
             elif naxes == 1:
                 ax1 = self.ChanTab['FeaturesFig'].figure.axes[0]
                 ax1.cla()
                 ax1.set_axis_bgcolor('k')
-                
+
             elif naxes >= 2:
                 self.ChanTab['FeaturesFig'].figure.clear()
                 ax1 = self.ChanTab['FeaturesFig'].figure.add_subplot(111)
@@ -1822,12 +1822,12 @@ class SpikeSorter(QtGui.QMainWindow):
             if naxes == 0:
                 ax1 = self.ChanTab['FeaturesFig'].figure.add_subplot(121)
                 ax2 = self.ChanTab['FeaturesFig'].figure.add_subplot(122, sharex=ax1, sharey=ax1)
-                
+
             elif naxes == 1:
                 self.ChanTab['FeaturesFig'].figure.clear()
                 ax1 = self.ChanTab['FeaturesFig'].figure.add_subplot(121)
                 ax2 = self.ChanTab['FeaturesFig'].figure.add_subplot(122, sharex=ax1, sharey=ax1)
-                
+
             elif naxes == 2:
                 ax1 = self.ChanTab['FeaturesFig'].figure.axes[0]
                 ax2 = self.ChanTab['FeaturesFig'].figure.axes[1]
@@ -2438,10 +2438,10 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # replot waveforms
         self.plot_unit_waveforms()
-        
+
         # replot the unit avg waveform, histogram and autocorrelation
         self.PlotUnitFigure_proc()
-                
+
         eclick.inaxes.figure.canvas.draw()
 
         self.trimWaveformsRect.set_active(False)
@@ -2452,7 +2452,7 @@ class SpikeSorter(QtGui.QMainWindow):
     ########################################################################################################
 
     def plot_unit_waveforms(self):
-        
+
         # get unit name and number
         unitName = str(self.ChanTab['UnitTabsWidget'].tabText(self.ChanTab['UnitTabsWidget'].currentIndex()))
         unitNo   = int(re.search('(?<=Unit)[0-9]{2}', unitName).group())
@@ -2467,7 +2467,7 @@ class SpikeSorter(QtGui.QMainWindow):
 
         node = self.CurNode.__getattr__(self.CurUnitName)
         nrows = node.Indx.nrows
-        
+
         if nrows > nspikes:
             unitIndx = node.Indx.read(start = 0, stop = nrows, step = nrows/nspikes)
         else:
@@ -2502,11 +2502,11 @@ class SpikeSorter(QtGui.QMainWindow):
 
             k.set_data(Ts, Wf)
             k.set_visible(True)
-        
+
         fig.canvas.draw()
-                
+
     ########################################################################################################
-                
+
     def AddUnit_proc(self):
         ''' starts a lasso instance to draw a line around a ROI'''
         # check whether there is a channel ploted
@@ -2805,10 +2805,10 @@ class SpikeSorter(QtGui.QMainWindow):
         # test which points lay inside the polygon
         p = Path(self.verts).contains_points(self.XYData.data)
 
-        # change to not checked        
+        # change to not checked
         self.KeepBtn.setChecked(False)
         self.KeepBtn.setCheckable(False)
-        
+
         # check how many points were selected
         if len(np.flatnonzero(p)) <= self.WfSize:
             print "Didn't doo anything: Too few points selected"
@@ -2855,7 +2855,7 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # replot the unit avg waveform, histogram and autocorrelation
         self.PlotUnitFigure_proc()
-        
+
         # replot the waveforms
         self.plot_unit_waveforms()
 
@@ -3028,7 +3028,7 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # replot the waveforms
         self.plot_unit_waveforms()
-        
+
         # replot the unit avg waveform, histogram and autocorrelation
         self.PlotUnitFigure_proc()
 
@@ -3250,17 +3250,18 @@ class SpikeSorter(QtGui.QMainWindow):
         ##### PLOT AUTOCORRELATION #####
 
         ts = self.CurTs[p]
-        
-        time = 250000
-       
+
+        time = 25000
+
         ts = ts[np.flatnonzero(ts < time)]
         ts11 = np.tile(ts, (ts.size, 1))
         ts22 = np.tile(ts, (ts.size, 1)).transpose()
         x = ts11 - ts22
-        ac, lags = np.histogram(x.flatten(), bins = 100, range=(-500, 500), normed=True)
-        ac[np.flatnonzero(lags==0)] = 0.0
-        ax2.bar(lags[0:-1], ac, width = np.diff(lags)[0], edgecolor = 'none',
-            color = self.UnitColors[unitNo])
+        ac, lags = np.histogram(x.flatten(), bins=100, range=(-500, 500),
+                                normed=True)
+        ac[np.flatnonzero(lags == 0)] = 0.0
+        ax2.bar(lags[0:-1], ac, width=np.diff(lags)[0], edgecolor='none',
+                color=self.UnitColors[unitNo])
 
         '''if ts.size > 1000: ts = ts[0:1000]
 
@@ -3268,7 +3269,7 @@ class SpikeSorter(QtGui.QMainWindow):
                          mode = 'fft', Range = [-150, 150])
         ac[ac.argmax()] = 0
         ax2.plot(x, ac, color = self.UnitColors[unitNo], lw = 2)'''
-        
+
         ax2.set_xlim(-500, 500)
         #ax2.set_ylim(0, ac.max())
         ax2.tick_params(color = [.5, .5, .5], labelcolor=[.5, .5, .5])
@@ -3832,34 +3833,34 @@ class SpikeSorter(QtGui.QMainWindow):
     ########################################################################################################
 
     def SliceDraw(self):
-        
+
         sender = self.sender()
         fig = self.ChanTab['WavesFigure'].figure
         ax = fig.axes[0]
-        
+
         if sender.objectName() == 'Slice1':
             self.Slice1Ln.set_xdata(sender.value())
-            
+
         elif sender.objectName() == 'Slice2':
             self.Slice2Ln.set_xdata(sender.value())
-        
+
         ax.draw_artist(ax.patch)
-        
+
         for k in ax.get_lines():
             ax.draw_artist(k)
-            
+
         for k in ax.get_xgridlines():
             ax.draw_artist(k)
-            
+
         for k in ax.get_ygridlines():
             ax.draw_artist(k)
-            
+
         ax.draw_artist(ax.spines['top'])
         ax.draw_artist(ax.spines['left'])
         fig.canvas.update()
         fig.canvas.flush_events()
         #self.ChanTab['WavesFigBG'] = fig.canvas.copy_from_bbox(ax.bbox)
-            
+
     ########################################################################################################
 
     def ChangeCurrentUnit_proc(self):
