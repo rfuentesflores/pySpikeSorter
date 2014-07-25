@@ -1024,16 +1024,19 @@ class SpikeSorter(QtGui.QMainWindow):
         waveforms and timestamps '''
 
         # try to load an h5 file
-        if settings.WorkingDir: d = settings.WorkingDir
-        else: d = ''
+        if settings.WorkingDir:
+            d = settings.WorkingDir
+        else:
+            d = ''
 
-        f = str(QtGui.QFileDialog.getOpenFileName(parent = self,
-                                                  caption = 'Select an H5 File',
-                                                  directory = d,
-                                                  filter = '*.h5'))
+        f = str(QtGui.QFileDialog.getOpenFileName(parent=self,
+                                                  caption='Select an H5 File',
+                                                  directory=d,
+                                                  filter='*.h5'))
 
         # in case there is not file selected
-        if not f: return
+        if not f:
+            return
 
         # set file loaded var = True
         if hasattr(self, 'H5FileLoaded') and self.H5FileLoaded == True:
@@ -1041,11 +1044,11 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # try to open the file
         try:
-            self.h5file = tables.openFile(str(f), mode = 'r+')
+            self.h5file = tables.openFile(str(f), mode='r+')
         except:
             self.MsgBox.setIcon(QtGui.QMessageBox.Warning)
             self.MsgBox.setText('There was a problem opening the H5 file')
-            self.MsgBox.setwindowTitle('Warning')
+            self.MsgBox.setWindowTitle('Warning')
             self.MsgBox.show()
             return
 
@@ -1670,7 +1673,8 @@ class SpikeSorter(QtGui.QMainWindow):
         # obtain labels and return if are the same
         xlabel = self.XPlot.currentText()
         ylabel = self.YPlot.currentText()
-        if xlabel == ylabel: return
+        if xlabel == ylabel:
+            return
 
         curchan = int(self.ChanSelector.currentText())
 
@@ -1678,22 +1682,21 @@ class SpikeSorter(QtGui.QMainWindow):
            self.CurNode.__contains__('ValidWFs'):
             print 'you selected to plot only the valid WFs'
 
-        What2Plot = str(self.What2Plot.currentText()) # string containing what to plot
+        What2Plot = str(self.What2Plot.currentText())  # string containing what to plot
         self.CurNodeName = '/Spikes/Chan_%03d' % curchan
         #unitNodes = [k for k in self.h5file.listNodes(self.CurNodeName) if re.search('Unit[0-9]{2}', k._v_name)]
 
-
         if What2Plot in ['All Waveforms', 'Sorted']:
             self.dataIndx = range(self.CurTs.size)
-            pc  = self.ChanTab['PCA']
+            pc = self.ChanTab['PCA']
         elif What2Plot == 'Unsorted':
-            self.dataIndx = self.h5file.getNode(self.CurNodeName,'Unsorted').read()
-            pc = PCA(self.CurWaveforms[self.dataIndx,:])
+            self.dataIndx = self.h5file.getNode(self.CurNodeName, 'Unsorted').read()
+            pc = PCA(self.CurWaveforms[self.dataIndx, :])
             pc = pc.Y
         elif re.search('Unit', What2Plot):
             self.CurUnitName = What2Plot
             self.dataIndx = self.h5file.getNode(self.CurNodeName, What2Plot).Indx.read()
-            pc = PCA(self.CurWaveforms[self.dataIndx,:])
+            pc = PCA(self.CurWaveforms[self.dataIndx, :])
             pc = pc.Y
 
         # save what is the feature
@@ -1701,92 +1704,91 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # get the choice for the x axis
         if xlabel == 'PCA1':
-            x = pc[:,0]
+            x = pc[:, 0]
 
         elif xlabel == 'PCA2':
-            x = pc[:,1]
+            x = pc[:, 1]
 
         elif xlabel == 'PCA3':
-            x = pc[:,2]
+            x = pc[:, 2]
 
         elif xlabel == 'Slice1':
             x = self.CurWaveforms[self.dataIndx, self.SliceSpBx1.value()]
-            x = x/100.0
+            x = x / 100.0
 
         elif xlabel == 'Slice2':
             x = self.CurWaveforms[self.dataIndx, self.SliceSpBx2.value()]
-            x = x/100.0
+            x = x / 100.0
 
         elif xlabel == 'Energy':
-            x = np.sum(np.power(self.CurWaveforms[self.dataIndx,:], 2), axis=1)
-            x = x/1000000.0
+            x = np.sum(np.power(self.CurWaveforms[self.dataIndx, :], 2), axis=1)
+            x = x / 1000000.0
 
         elif xlabel == 'Peak':
-            x = self.CurWaveforms[self.dataIndx,:].max(axis=1)
-            x = x/100.0
+            x = self.CurWaveforms[self.dataIndx, :].max(axis=1)
+            x = x / 100.0
 
         elif xlabel == 'Valley':
-            x = self.CurWaveforms[self.dataIndx,:].min(axis=1)
-            x = x/100.0
+            x = self.CurWaveforms[self.dataIndx, :].min(axis=1)
+            x = x / 100.0
 
         elif xlabel == 'Peak Pt':
-            x = self.CurWaveforms[self.dataIndx,:].argmax(axis=1)
+            x = self.CurWaveforms[self.dataIndx, :].argmax(axis=1)
 
         elif xlabel == 'Valley Pt':
-            x = self.CurWaveforms[self.dataIndx,:].argmin(axis=1)
+            x = self.CurWaveforms[self.dataIndx, :].argmin(axis=1)
 
         elif xlabel == 'Pk2Pk Amp':
-            x = self.CurWaveforms[self.dataIndx,:].max(axis=1)-self.CurWaveforms[self.dataIndx,:].min(axis=1)
-            x = x/100.0
+            x = self.CurWaveforms[self.dataIndx, :].max(axis=1) - self.CurWaveforms[self.dataIndx, :].min(axis=1)
+            x = x / 100.0
 
         elif xlabel == 'Time':
             x = self.CurTs[self.dataIndx]
-            x = x/60000.0
-
+            x = x / 60000.0
 
         # get the choice for the y axis
         if ylabel == 'PCA1':
-            y = pc[:,0]
+            y = pc[:, 0]
 
         elif ylabel == 'PCA2':
-            y = pc[:,1]
+            y = pc[:, 1]
 
         elif ylabel == 'PCA3':
-            y = pc[:,2]
+            y = pc[:, 2]
 
         elif ylabel == 'Slice1':
             y = self.CurWaveforms[self.dataIndx, self.SliceSpBx1.value()]
-            y = y/100.0
+            y = y / 100.0
 
         elif ylabel == 'Slice2':
             y = self.CurWaveforms[self.dataIndx, self.SliceSpBx2.value()]
-            y = y/100.0
+            y = y / 100.0
 
         elif ylabel == 'Energy':
-            y = np.sum(np.power(self.CurWaveforms[self.dataIndx,:], 2), axis=1)
-            y = y/1000000.0
+            y = np.sum(np.power(self.CurWaveforms[self.dataIndx, :], 2), axis=1)
+            y = y / 1000000.0
 
         elif ylabel == 'Peak':
-            y = self.CurWaveforms[self.dataIndx,:].max(axis=1)
-            y = y/100.0
+            y = self.CurWaveforms[self.dataIndx, :].max(axis=1)
+            y = y / 100.0
 
         elif ylabel == 'Valley':
-            y = self.CurWaveforms[self.dataIndx,:].min(axis=1)
-            y = y/100.0
+            y = self.CurWaveforms[self.dataIndx, :].min(axis=1)
+            y = y / 100.0
 
         elif ylabel == 'Peak Pt':
-            y = self.CurWaveforms[self.dataIndx,:].argmax(axis=1)
+            y = self.CurWaveforms[self.dataIndx, :].argmax(axis=1)
 
         elif ylabel == 'Valley Pt':
-            y = self.CurWaveforms[self.dataIndx,:].argmin(axis=1)
+            y = self.CurWaveforms[self.dataIndx, :].argmin(axis=1)
 
         elif ylabel == 'Pk2Pk Amp':
-            y = self.CurWaveforms[self.dataIndx,:].max(axis=1)-self.CurWaveforms[self.dataIndx,:].min(axis=1)
-            y = y/100.0
+            y = self.CurWaveforms[self.dataIndx, :].max(axis=1) - self.CurWaveforms[self.dataIndx, :].min(axis=1)
+            y = y / 100.0
 
         elif ylabel == 'Time':
             y = self.CurTs[self.dataIndx]
-            y = y/60000.0
+            y = y / 60000.0
 
         naxes = len(self.ChanTab['FeaturesFig'].figure.axes)
 
@@ -1838,9 +1840,10 @@ class SpikeSorter(QtGui.QMainWindow):
             # create and plot a 2d histogram
 
         # setup the axes
-        ax1.set_title(title, fontdict={'color':'w'})
-        ax1.tick_params(color = [.5, .5, .5])
-        for k in ax1.spines.values(): k.set_edgecolor([.5, .5, .5])
+        ax1.set_title(title, fontdict={'color': 'w'})
+        ax1.tick_params(color=[.5, .5, .5])
+        for k in ax1.spines.values():
+            k.set_edgecolor([.5, .5, .5])
         ax1.set_xticklabels([])
         ax1.set_yticklabels([])
         ax1.set_axis_bgcolor('k')
@@ -1854,27 +1857,27 @@ class SpikeSorter(QtGui.QMainWindow):
             for leaf in nodes:
                 if leaf._v_name == 'Unsorted':
                     # select only some indices to plot
-                    if  leaf.nrows > self.nPtsSpin.value():
-                        indx = leaf.read(0, leaf.nrows, leaf.nrows/self.nPtsSpin.value())
+                    if leaf.nrows > self.nPtsSpin.value():
+                        indx = leaf.read(0, leaf.nrows, leaf.nrows / self.nPtsSpin.value())
                     else:
                         indx = leaf.read()
 
                     # plot unsorted
                     ax1.plot(x[indx], y[indx], ',',
-                             color = [.5, .5, .5], label = 'data_Unsorted')
+                             color=[.5, .5, .5], label='data_Unsorted')
 
                 unit = re.search('(?<=Unit)[0-9]{2}', leaf._v_name)
                 if unit:
                     # select some units to plot
                     if leaf.Indx.nrows > self.nPtsSpin.value():
-                        indx = leaf.Indx.read(0, leaf.Indx.nrows, leaf.Indx.nrows/self.nPtsSpin.value())
+                        indx = leaf.Indx.read(0, leaf.Indx.nrows, leaf.Indx.nrows / self.nPtsSpin.value())
                     else:
                         indx = leaf.Indx.read()
 
-                    ax1.plot(x[indx], y[indx], ',', label = 'data_'+leaf._v_name,
-                             rasterized = True,
-                             color = self.UnitColors[int(unit.group()),:],
-                             mec = self.UnitColors[int(unit.group()),:])
+                    ax1.plot(x[indx], y[indx], ',', label='data_' + leaf._v_name,
+                             rasterized=True,
+                             color=self.UnitColors[int(unit.group()), :],
+                             mec=self.UnitColors[int(unit.group()), :])
 
                     # add unit to the tab widget
                     self.UnitsTable_AddUnit(leaf._v_name)
@@ -1886,15 +1889,15 @@ class SpikeSorter(QtGui.QMainWindow):
                 if unit:
                     # select some units to plot
                     if leaf.Indx.nrows > self.nPtsSpin.value():
-                        indx = leaf.Indx.read(0, leaf.Indx.nrows, leaf.Indx.nrows/self.nPtsSpin.value())
+                        indx = leaf.Indx.read(0, leaf.Indx.nrows, leaf.Indx.nrows / self.nPtsSpin.value())
                     else:
                         indx = leaf.Indx.read()
 
-                    ax1.plot(x[indx,:], y[indx,:], ',', label = 'data_'+leaf._v_name,
-                             rasterized = True,
-                             color = self.UnitColors[int(unit.group()),:],
-                             mec = self.UnitColors[int(unit.group()),:],
-                             zorder = 10)
+                    ax1.plot(x[indx, :], y[indx, :], ',', label='data_' + leaf._v_name,
+                             rasterized=True,
+                             color=self.UnitColors[int(unit.group()), :],
+                             mec=self.UnitColors[int(unit.group()), :],
+                             zorder=10)
 
                     # add unit to the tab widget
                     self.UnitsTable_AddUnit(leaf._v_name)
@@ -1904,13 +1907,13 @@ class SpikeSorter(QtGui.QMainWindow):
             lx = len(x)
             # select some units to plot
             if lx > self.nPtsSpin.value():
-                indx = range(0, lx, lx/self.nPtsSpin.value())
+                indx = range(0, lx, lx / self.nPtsSpin.value())
             else:
                 indx = range(lx)
-            ax1.plot(x[indx], y[indx], ',', color = [.5, .5, .5]
-                     , label = 'data_Unsorted',
-                     rasterized = True,
-                     zorder = 10)
+            ax1.plot(x[indx], y[indx], ',', color=[.5, .5, .5]
+                     , label='data_Unsorted',
+                     rasterized=True,
+                     zorder=10)
 
         # plot a specific unit
         elif re.search('Unit', What2Plot):
@@ -1918,32 +1921,36 @@ class SpikeSorter(QtGui.QMainWindow):
             lx = len(x)
             # select some units to plot
             if lx > self.nPtsSpin.value():
-                indx = range(0, lx, lx/self.nPtsSpin.value())
+                indx = range(0, lx, lx / self.nPtsSpin.value())
             else:
                 indx = range(lx)
 
-            ax1.plot(x[indx], y[indx], ',', label = 'data_'+What2Plot,
-                     rasterized = True,
-                     color = self.UnitColors[int(unit),:],
-                     mec = self.UnitColors[int(unit),:],
-                     zorder = 10)
+            ax1.plot(x[indx], y[indx], ',', label='data_' + What2Plot,
+                     rasterized=True,
+                     color=self.UnitColors[int(unit), :],
+                     mec=self.UnitColors[int(unit), :],
+                     zorder=10)
 
             # add unit to the tab widget
             self.UnitsTable_AddUnit(What2Plot)
 
-        if same_limits == True:
+        if same_limits:
             ax1.set_ylim(ylim)
             ax1.set_xlim(xlim)
         else:
             ax1.relim()
-            ax1.autoscale_view(True,True,True)
+            ax1.autoscale_view(True, True, True)
 
         # vertical and horizontal lines @ x and y = 0
-        ax1.axvline(0, color=[.5, .5, .5], zorder = 0)
-        ax1.axhline(0, color=[.5, .5, .5], zorder = 0)
+        ax1.axvline(0, color=[.5, .5, .5], zorder=0)
+        ax1.axhline(0, color=[.5, .5, .5], zorder=0)
+
+        # 60 minute line
+        if xlabel == 'Time':
+            ax1.axvline(60, color='gray', zorder=0)
 
         # create KDTree objet from the selected data for fast search
-        self.XYData = cKDTree(np.array([x,y]).transpose())
+        self.XYData = cKDTree(np.array([x, y]).transpose())
 
         # connect figure to the motion notify function
         if not ax1.callbacks.callbacks or not hasattr(self, 'axZoomCID'):
@@ -1975,29 +1982,28 @@ class SpikeSorter(QtGui.QMainWindow):
         xlabel = self.XPlot.currentText()
         ylabel = self.YPlot.currentText()
         zlabel = self.ZPlot.currentText()
-        if xlabel==ylabel or xlabel==zlabel or ylabel==zlabel: return
+        if xlabel == ylabel or xlabel == zlabel or ylabel == zlabel:
+            return
 
         curchan = int(self.ChanSelector.currentText())
 
-        if self.PlotValidsOnlyCheck.checkState()==2 and \
-           self.CurNode.__contains__('ValidWFs'):
+        if self.PlotValidsOnlyCheck.checkState() and self.CurNode.__contains__('ValidWFs'):
             print 'you selected to plot only the valid WFs'
 
-        What2Plot = str(self.What2Plot.currentText()) # string containing what to plot
+        What2Plot = str(self.What2Plot.currentText())  # string containing what to plot
         self.CurNodeName = '/Spikes/Chan_%03d' % curchan
-
 
         if What2Plot == 'All Waveforms':
             self.dataIndx = range(self.CurTs.size)
-            pc  = self.ChanTab['PCA']
+            pc = self.ChanTab['PCA']
         elif What2Plot == 'Unsorted':
-            self.dataIndx = self.h5file.getNode(self.CurNodeName,'Unsorted').read()
-            pc = PCA(self.CurWaveforms[self.dataIndx,:])
+            self.dataIndx = self.h5file.getNode(self.CurNodeName, 'Unsorted').read()
+            pc = PCA(self.CurWaveforms[self.dataIndx, :])
             pc = pc.Y
-        elif re.search('Unit',What2Plot):
+        elif re.search('Unit', What2Plot):
             self.CurUnitName = What2Plot
             self.dataIndx = self.h5file.getNode(self.CurNodeName, What2Plot).Indx.read()
-            pc = PCA(self.CurWaveforms[self.dataIndx,:])
+            pc = PCA(self.CurWaveforms[self.dataIndx, :])
             pc = pc.Y
         elif What2Plot == 'Sorted':
             return
@@ -2007,17 +2013,17 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # get the choice for the x axis
         if xlabel == 'PCA1':
-            x = pc[:,0]
+            x = pc[:, 0]
 
         elif xlabel == 'PCA2':
-            x = pc[:,1]
+            x = pc[:, 1]
 
         elif xlabel == 'PCA3':
-            x = pc[:,2]
+            x = pc[:, 2]
 
         elif xlabel == 'Slice1':
-            x = self.CurWaveforms[self.dataIndx, self.SliceSpBx1.value()]/100.0
-            x = x/100.0
+            x = self.CurWaveforms[self.dataIndx, self.SliceSpBx1.value()] / 100.0
+            x = x / 100.0
 
         elif xlabel == 'Slice2':
             x = self.CurWaveforms[self.dataIndx, self.SliceSpBx2.value()]/100.0
