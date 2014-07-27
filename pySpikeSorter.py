@@ -1,22 +1,13 @@
-#!/usr/local/bin/ipython -i
+#!/usr/local/bin/python -i
 
-'''
-Required Packages:
-    - Numpy
-    - Matplotlib
-    - Scipy
-    - pyqtgraph
-    - Spatial (KDTree)
-    - PyQt4
-    - guidata
-    - pytables
-'''
+#---------------------------------------------------------------------- IMPORTS
 
-################ IMPORTS #################################################
-
-import sys, os, re, tables
+import os
+import sys
+import re
+import tables
 import numpy as np
-import pdb
+#import pdb
 
 # extra widgets import
 import matplotlib_widgets
@@ -35,52 +26,55 @@ import datetime
 
 import m_BlackrockLib as BL
 
-########## UTILITY FUNCTIONS #######################################################
 
-def autocorr(TimeStamp, binSize = 20, Win = [0, 10000], mode = 'time', Range = [-200, 200]):
+#==============================================================================
+def autocorr(TimeStamp, binSize=20, Win=[0, 10000], mode='time',
+             Range=[-200, 200]):
 
-    if not np.any(TimeStamp): return
+    if not np.any(TimeStamp):
+        return
 
     Win = np.array(Win)
     TimeStamp = np.array(TimeStamp)
     TimeStamp = TimeStamp - TimeStamp[0]
-    TS = TimeStamp[(TimeStamp>=Win[0]) & (TimeStamp<Win[1])]
+    TS = TimeStamp[(TimeStamp >= Win[0]) & (TimeStamp < Win[1])]
 
     if TS.size > 1000:
         TimeStamp = TS
 
     binSize = int(binSize)
     nBins = TimeStamp[-1] / binSize
-    train = np.zeros(nBins+1, dtype = np.int16)
-    for k in np.floor(TimeStamp/binSize).astype('int'):
+    train = np.zeros(nBins + 1, dtype=np.int16)
+    for k in np.floor(TimeStamp / binSize).astype('int'):
         train[k] = train[k] + 1
 
     if mode == 'time':
         ac = np.correlate(train, train, mode='same')
-        x  = np.linspace(-TimeStamp[-1]/2, TimeStamp[-1]/2, ac.size)
+        x = np.linspace(-TimeStamp[-1] / 2, TimeStamp[-1] / 2, ac.size)
 
     elif mode == 'ephys':
         tmp = np.array([])
         for k in TimeStamp:
             t = TimeStamp - k
-            t = t[ (t>Range[0]) & (t<Range[1]) ]
+            t = t[(t > Range[0]) & (t < Range[1])]
             tmp = np.append(tmp, t)
-        ac, x = np.histogram(tmp, bins = int(np.diff(Range)/binSize) )
+        ac, x = np.histogram(tmp, bins=int(np.diff(Range) / binSize))
         x = x[1:]
-        ac[np.flatnonzero(x==0)] = 0
+        ac[np.flatnonzero(x == 0)] = 0
 
     elif mode == 'fft':
-        s  = np.fft.fft(train)
-        ac = np.abs( np.fft.ifft( s * np.conjugate(s) ) )
+        s = np.fft.fft(train)
+        ac = np.abs(np.fft.ifft(s * np.conjugate(s)))
         #ac = ac/(train.size/((Win[1]-Win[0])/1000))
-        ac = np.concatenate( [ ac[ac.size/2:], ac[0:ac.size/2] ] )
-        x  = np.linspace(-TimeStamp[-1]/2, TimeStamp[-1]/2, ac.size)
+        ac = np.concatenate([ac[ac.size / 2:], ac[0:ac.size / 2]])
+        x = np.linspace(-TimeStamp[-1] / 2, TimeStamp[-1] / 2, ac.size)
 
     return ac, x
 
-##########################################################################################
 
-def KlustaKwik_call(data, minClust = 2, maxClust = 5):
+#==============================================================================
+def KlustaKwik_call(data, minClust=2, maxClust=5):
+
     ''' data must be an array of observations x dimensions'''
 
     # create a text file with the data. The first line must be the
@@ -94,12 +88,16 @@ def KlustaKwik_call(data, minClust = 2, maxClust = 5):
     f.close()
 
     # call klustakwick with the data
-    if os.system('KlustaKwik data 1 -MinClusters %d -MaxClusters %d'\
-        % (minClust, maxClust)) != 256:
+    if os.system('KlustaKwik data 1 -MinClusters %d -MaxClusters %d'
+                 % (minClust, maxClust)) != 256:
             return
 
+    # wait while klustakwick gets the clusters
+    while not os.path.isfile('data.clu.1'):
+        continue
+
     # read the results
-    f = open('data.clu.1','r')
+    f = open('data.clu.1', 'r')
     clusterData = f.readlines()
     f.close()
     clusterData = [int(re.search('[0-9]{1,2}', k).group()) for k in clusterData]
@@ -111,23 +109,25 @@ def KlustaKwik_call(data, minClust = 2, maxClust = 5):
 
     # create an array with the indices of each cluster
     clustIndx = []
-    for k in range(1, nClusters+1):
-        clustIndx.append(np.flatnonzero(clusterData==k))
+    for k in range(1, nClusters + 1):
+        clustIndx.append(np.flatnonzero(clusterData == k))
 
     return clustIndx
 
-##########################################################################################
 
-## Spike Sorter Main GUI Window
+#==============================================================================
+# Spike Sorter Main GUI Window
 
 rc('xtick', labelsize=8)
 rc('ytick', labelsize=8)
 
 # create instance of imported widgets
-settings     = helper_widgets.Settings()
+settings = helper_widgets.Settings()
 autocorropts = helper_widgets.AutocorrOpts()
-autoclust    = helper_widgets.AutoClustWidget()
+autoclust = helper_widgets.AutoClustWidget()
 
+
+#==============================================================================
 class SpikeSorter(QtGui.QMainWindow):
 
     def __init__(self):
@@ -140,27 +140,21 @@ class SpikeSorter(QtGui.QMainWindow):
         self.MainLayout.setMargin(0)
         self.MainLayout.setSpacing(0)
 
-        ###########  SET SEVERAL VARIABLES ##############################################
-
-        self.CurUnit      = 0
-        self.PlotUnitCounter =0
-        self.UnitsList    = []
-        self.NUnits       = 0
+        self.CurUnit = 0
+        self.PlotUnitCounter = 0
+        self.UnitsList = []
+        self.NUnits = 0
         self.H5FileLoaded = False
-        self.ChanPlotted  = False
-        self.RemovingTab  = 0
-        self.UnitColors   = np.array([[  1,   0,   0],
-                                      [  0, 0.7,   0],
-                                      [  0, 0.4,   1],
-                                      [0.8, 0.6,   0],
-                                      [0.6,   0,   1],
-                                      [  0, 0.7, 0.7],
-                                      [  0, 0.5,   1]])
-        self.UnitColors = np.tile(self.UnitColors, (10,1))
+        self.ChanPlotted = False
+        self.RemovingTab = 0
+        self.UnitColors = np.array([[1, 0, 0], [0, 0.7, 0], [0, 0.4, 1],
+                                    [0.8, 0.6, 0], [0.6, 0, 1], [0, 0.7, 0.7],
+                                    [0, 0.5, 1]])
+        self.UnitColors = np.tile(self.UnitColors, (10, 1))
 
-        ########### TOOLBAR ON THE LEFT SIDE ################################
+        #--------------------------------------------- TOOLBAR ON THE LEFT SIDE
 
-        split1 = QtGui.QSplitter(QtCore.Qt.Horizontal, self.MainWidget)   ## SPLITTER
+        split1 = QtGui.QSplitter(QtCore.Qt.Horizontal, self.MainWidget)   # SPLITTER
         self.ToolsTab = QtGui.QTabWidget()
 
         ToolsTab1 = QtGui.QWidget()
@@ -172,11 +166,10 @@ class SpikeSorter(QtGui.QMainWindow):
 
         split1.addWidget(self.ToolsTab)
 
-        ########### self.ToolsTab No 1 #############################################
+        #---------------------------------------------------------ToolsTab No 1
         toolslay = QtGui.QVBoxLayout()
 
-        ### FRAME 1
-
+        #-------------------------------------------------------------- FRAME 1
         grp = QtGui.QGroupBox('Overview Tools', ToolsTab1)
         vlay = QtGui.QVBoxLayout()
 
@@ -201,7 +194,7 @@ class SpikeSorter(QtGui.QMainWindow):
         hlay.addWidget(self.OverviewYLimsSpin)
         vlay.addLayout(hlay)
 
-
+        #----------------------------------------------------------------------
         btn = QtGui.QPushButton('Plot Overview')
         btn.setStyleSheet('QPushButton{background-color: rgba(0,190,0)}')
         btn.clicked.connect(self.LoadH5File)
@@ -225,7 +218,7 @@ class SpikeSorter(QtGui.QMainWindow):
         self.MarkTrashSpin.setValue(1000)
         hlay.addWidget(QtGui.QLabel('Below'))
         hlay.addWidget(self.MarkTrashSpin)
-        MarkTrashBtn  = QtGui.QPushButton('Mark Trash')
+        MarkTrashBtn = QtGui.QPushButton('Mark Trash')
         MarkTrashBtn.clicked.connect(self.TrashChans_proc)
         hlay.addWidget(MarkTrashBtn)
         vlay.addLayout(hlay)
@@ -238,7 +231,7 @@ class SpikeSorter(QtGui.QMainWindow):
         grp.setLayout(vlay)
         toolslay.addWidget(grp)
 
-        ### FRAME 2
+        #-------------------------------------------------------------- FRAME 2
         grp = QtGui.QGroupBox('Channel Plot Options', ToolsTab1)
         vlay = QtGui.QVBoxLayout()
 
@@ -255,7 +248,7 @@ class SpikeSorter(QtGui.QMainWindow):
         grp.setLayout(vlay)
         toolslay.addWidget(grp)
 
-        ######### Group No3 #####################
+        #------------------------------------------------------------ Group No3
 
         grp = QtGui.QGroupBox('General Tools', ToolsTab1)
         glay = QtGui.QGridLayout()
@@ -276,14 +269,9 @@ class SpikeSorter(QtGui.QMainWindow):
         exitBtn.clicked.connect(self.closeEvent)
         glay.addWidget(exitBtn, 1, 1)
 
-
         convertFileBtn = QtGui.QPushButton('Convert File')
         convertFileBtn.clicked.connect(BL.bin2h5)
-        glay.addWidget(convertFileBtn, 2,0)
-
-        '''bin2H5Btn = QtGui.QPushButton('Bin2H5')
-        bin2H5Btn.clicked.connect(bin2h5.bin2h5)
-        glay.addWidget(bin2H5Btn, 0, 1)'''
+        glay.addWidget(convertFileBtn, 2, 0)
 
         grp.setLayout(glay)
         toolslay.addWidget(grp)
@@ -293,50 +281,11 @@ class SpikeSorter(QtGui.QMainWindow):
                                           'About',
                                           u'Spyke Sorter v0.1\nHachi Manzur, 2012')
 
-        ''' Code to have a menu bar (commented to gain space)
-        menubar = self.menuBar()
-        fileMenu = menubar.addMenu('&File')
-
-        openFileAction = QtGui.QAction('&Open File', self)
-        openFileAction.setStatusTip('Open a File')
-        openFileAction.setShortcut('Ctrl+o')
-        openFileAction.triggered.connect(self.SelFile)
-        fileMenu.addAction(openFileAction)
-
-        bin2H5Action = QtGui.QAction('&bin2H5', self)
-        bin2H5Action.setStatusTip('Transofmr binary files into H5')
-        bin2H5Action.triggered.connect(bin2h5)
-        fileMenu.addAction(bin2H5Action)
-
-        closeFileAction = QtGui.QAction('&Close H5 File', self)
-        closeFileAction.setStatusTip('Close an H5 File')
-        closeFileAction.setShortcut('Ctrl+x')
-        closeFileAction.triggered.connect(self.CloseFile)
-        fileMenu.addAction(closeFileAction)
-
-        settingsAction = QtGui.QAction('&Settings', self)
-        settingsAction.setStatusTip('Settings')
-        settingsAction.triggered.connect(self.Settings)
-        fileMenu.addAction(settingsAction)
-
-        exitAction = QtGui.QAction('&Exit', self)
-        exitAction.setShortcut('Ctrl+Q')
-        exitAction.setStatusTip('Exit application')
-        exitAction.triggered.connect(self.close)
-        fileMenu.addAction(exitAction)
-
-        helpMenu = menubar.addMenu('&?')
-        aboutAction = QtGui.QAction('&About', self)
-        aboutAction.setStatusTip('About')
-        aboutAction.triggered.connect(self.About)
-        helpMenu.addAction(aboutAction)'''
-
         toolslay.addStretch(1)
 
         ToolsTab1.setLayout(toolslay)
 
-        ########### self.ToolsTab No 2 #############################################
-
+        #--------------------------------------------------- self.ToolsTab No 2
         toolslay = QtGui.QVBoxLayout()
 
         # group No1
@@ -344,10 +293,8 @@ class SpikeSorter(QtGui.QMainWindow):
         vlay = QtGui.QVBoxLayout()
 
         # add X and Y features selection combobox
-        items=['PCA1','PCA2','PCA3',
-               'Slice1','Slice2','Time','Pk2Pk Amp',
-               'Peak','Valley','Energy',
-               'Peak Pt','Valley Pt']
+        items = ['PCA1', 'PCA2', 'PCA3', 'Slice1', 'Slice2', 'Time', 'Pk2Pk Amp',
+                 'Peak', 'Valley', 'Energy', 'Peak Pt', 'Valley Pt']
         self.XPlot = QtGui.QComboBox(grp)
         self.YPlot = QtGui.QComboBox(grp)
         self.ZPlot = QtGui.QComboBox(grp)
@@ -460,8 +407,8 @@ class SpikeSorter(QtGui.QMainWindow):
 
         toolslay.addWidget(grp)
 
-        ### group No 2 ###
-        grp  = QtGui.QGroupBox('Raw Waveforms Opts')
+        #----------------------------------------------------------- group No 2
+        grp = QtGui.QGroupBox('Raw Waveforms Opts')
         vlay = QtGui.QVBoxLayout()
 
         # number of spikes spin box
@@ -529,16 +476,7 @@ class SpikeSorter(QtGui.QMainWindow):
 
         toolslay.addLayout(hlay)
 
-        ##### CHANNEL METAINFO GROUP #####
-
-        '''grp = QtGui.QGroupBox('Channel Metainfo')
-        vlay = QtGui.QVBoxLayout()
-        grp.setLayout(vlay)
-        toolslay.addWidget(grp)
-        # button to tight_layout() on resize of the main window
-        #btn = QtGui.QPushButton('Adjust')
-        #btn.clicked.connect(self.AdjustPlots_proc)
-        #toolslay.addWidget(btn)'''
+        #----------------------------------------------- CHANNEL METAINFO GROUP
 
         # button to reset a channel
         btn = QtGui.QPushButton('Reset Channel')
@@ -550,31 +488,26 @@ class SpikeSorter(QtGui.QMainWindow):
         btn.clicked.connect(self.AutocorrOpts)
         toolslay.addWidget(btn)
 
-        # replot units
-        #btn = QtGui.QPushButton('Replot Unit')
-        #btn.clicked.connect(self.PlotUnitFigure_proc)
-        #toolslay.addWidget(btn)
-
         toolslay.addStretch(1)
         ToolsTab2.setLayout(toolslay)
 
-        ########### TABBED FIGURES WIDGET #################################
+        #------------------------------------------------ TABBED FIGURES WIDGET
 
         self.OverviewTab1 = {}
         self.OverviewTab2 = {}
 
         self.MainFigTab = QtGui.QTabWidget()
         self.MainFigTab.currentChanged.connect(self.MainFigTabProc)
-        self.OverviewTab1['MainWidget']  = QtGui.QWidget(self.MainFigTab)
+        self.OverviewTab1['MainWidget'] = QtGui.QWidget(self.MainFigTab)
         hlay = QtGui.QHBoxLayout(self.OverviewTab1['MainWidget'])
 
-        self.MainFigTab.addTab(self.OverviewTab1['MainWidget'],'Channels Overview')
+        self.MainFigTab.addTab(self.OverviewTab1['MainWidget'], 'Channels Overview')
 
         # overview figure
-        self.OverviewTab1['Figure']  = matplotlib_widgets.MplWidget()
+        self.OverviewTab1['Figure'] = matplotlib_widgets.MplWidget()
         self.OverviewTab1['Figure'].figure.set_facecolor('k')
         self.OverviewTab1['Toolbar'] = matplotlib_widgets.NavToolbar(self.OverviewTab1['Figure'], self.OverviewTab1['MainWidget'])
-        self.OverviewTab1['Toolbar'].setIconSize(QtCore.QSize(15,15))
+        self.OverviewTab1['Toolbar'].setIconSize(QtCore.QSize(15, 15))
         vlay = QtGui.QVBoxLayout()
         vlay.addWidget(self.OverviewTab1['Figure'])
         vlay.addWidget(self.OverviewTab1['Toolbar'])
@@ -584,18 +517,17 @@ class SpikeSorter(QtGui.QMainWindow):
         hlay.setMargin(0)
         hlay.setSpacing(1)
 
-        ########### OVERVIEW TABLE WIDGET #################################
-
-        self.OverviewTab2['MainWidget']    = QtGui.QWidget(self.MainFigTab)
-        self.OverviewTab2['OverviewTable'] = QtGui.QTableWidget(0,6,self.OverviewTab2['MainWidget'])
+        #------------------------------------------------ OVERVIEW TABLE WIDGET
+        self.OverviewTab2['MainWidget'] = QtGui.QWidget(self.MainFigTab)
+        self.OverviewTab2['OverviewTable'] = QtGui.QTableWidget(0, 6, self.OverviewTab2['MainWidget'])
         self.OverviewTab2['OverviewTable'].setAlternatingRowColors(True)
-        self.OverviewTab2['OverviewTable'].setFont(QtGui.QFont('sans',8))
-        labels = ['Count','isTrash','MultiUnit?','Comments','Unsorted','Valid']
+        self.OverviewTab2['OverviewTable'].setFont(QtGui.QFont('sans', 8))
+        labels = ['Count', 'isTrash', 'MultiUnit?', 'Comments', 'Unsorted', 'Valid']
         self.OverviewTab2['OverviewTable'].setHorizontalHeaderLabels(labels)
         for k in range(self.OverviewTab2['OverviewTable'].columnCount()):
-            self.OverviewTab2['OverviewTable'].setColumnWidth(k,65)
-        self.OverviewTab2['OverviewTable'].setColumnWidth(3,150)
-        self.OverviewTab2['OverviewTable'].setColumnWidth(2,75)
+            self.OverviewTab2['OverviewTable'].setColumnWidth(k, 65)
+        self.OverviewTab2['OverviewTable'].setColumnWidth(3, 150)
+        self.OverviewTab2['OverviewTable'].setColumnWidth(2, 75)
 
         # associate the vertical header click to select the channel
         vHeader = self.OverviewTab2['OverviewTable'].verticalHeader()
@@ -621,19 +553,16 @@ class SpikeSorter(QtGui.QMainWindow):
         grp.setLayout(hlay)
         vlay.addWidget(grp)
 
-        self.MainFigTab.addTab(self.OverviewTab2['MainWidget'],'Summary Table')
+        self.MainFigTab.addTab(self.OverviewTab2['MainWidget'], 'Summary Table')
 
-        ##### CHANNEL TAB #####
-
+        #---------------------------------------------------------- CHANNEL TAB
         self.ChanTab = {}
-        #curfigtab = self.MainFigTab.currentIndex()-1
         self.ChanTab['MainWidget'] = QtGui.QWidget()
-        self.MainFigTab.addTab(self.ChanTab['MainWidget'],'Channel Tab')
-        #splitter = QtGui.QSplitter(QtCore.Qt.Horizontal, self.ChanTab['MainWidget'])
+        self.MainFigTab.addTab(self.ChanTab['MainWidget'], 'Channel Tab')
 
         mainHLay = QtGui.QHBoxLayout()
 
-        ##### RAW WAVEFORMS WIDGET #####
+        #------------------------------------------------- RAW WAVEFORMS WIDGET
         # create the mpl widget to plot the raw waveforms
         vlay = QtGui.QVBoxLayout()
 
@@ -645,7 +574,7 @@ class SpikeSorter(QtGui.QMainWindow):
         self.NUnitsSpin.setMaximum(10000)
         self.NUnitsSpin.setValue(1)
 
-        TrimBtn  = QtGui.QPushButton('Trim Waveforms')
+        TrimBtn = QtGui.QPushButton('Trim Waveforms')
         TrimBtn.clicked.connect(self.ActivateTrimWaveforms_proc)
         TrimBtn.setMaximumHeight(20)
 
@@ -663,36 +592,31 @@ class SpikeSorter(QtGui.QMainWindow):
         hlay.addStretch(1)
         vlay.addLayout(hlay)
 
-        # waveforms plot and toolbar
+        #------------------------------------------- waveforms plot and toolbar
         hlay = QtGui.QHBoxLayout()
         self.ChanTab['WavesFigure'] = matplotlib_widgets.MplWidget()
         self.ChanTab['WavesFigure'].figure.set_facecolor('k')
         self.ChanTab['WaveToolbar'] = matplotlib_widgets.NavToolbar(self.ChanTab['WavesFigure'],
                                                                     self.ChanTab['MainWidget'],
                                                                     coordinates=False)
-        self.ChanTab['WaveToolbar'].setIconSize(QtCore.QSize(15,15))
+        self.ChanTab['WaveToolbar'].setIconSize(QtCore.QSize(15, 15))
         self.ChanTab['WaveToolbar'].setOrientation(QtCore.Qt.Vertical)
         self.ChanTab['WaveToolbar'].setMaximumWidth(30)
-##        self.ChanTab['WaveToolbar'].setFloatable(True)
-##        self.ChanTab['WaveToolbar'].setMovable(True)
         hlay.addWidget(self.ChanTab['WavesFigure'])
         hlay.addWidget(self.ChanTab['WaveToolbar'])
         hlay.setMargin(0)
         hlay.setSpacing(1)
         vlay.addLayout(hlay)
 
-        ###### UNIT TABS WIDGET ######
-
+        #------------------------------------------------------ UNIT TABS WIDGET
         self.ChanTab['UnitTabsWidget'] = QtGui.QTabWidget()
-        #self.ChanTab['UnitTabsWidget'].setMovable(True)
         self.ChanTab['UnitTabBarWidget'] = self.ChanTab['UnitTabsWidget'].tabBar()
-        #self.ChanTab['UnitTabBarWidget'].tabMoved.connect(self.ExchangeUnitName_proc)
-        self.ChanTab['UnitTabsWidget'].setMaximumHeight(QtGui.QApplication.desktop().availableGeometry().height()/4)
-        self.ChanTab['UnitFigures']      = {}
-        self.ChanTab['DelUnitBtns']      = {}
-        self.ChanTab['UnitCountLabel']   = {}
-        self.ChanTab['UnitBtns']         = {}
-        self.ChanTab['PlotRawCheck']     = {}
+        self.ChanTab['UnitTabsWidget'].setMaximumHeight(QtGui.QApplication.desktop().availableGeometry().height() / 4)
+        self.ChanTab['UnitFigures'] = {}
+        self.ChanTab['DelUnitBtns'] = {}
+        self.ChanTab['UnitCountLabel'] = {}
+        self.ChanTab['UnitBtns'] = {}
+        self.ChanTab['PlotRawCheck'] = {}
         self.ChanTab['isMultiunitCheck'] = {}
         self.ChanTab['UnitTabsWidget'].currentChanged.connect(self.ChangeCurrentUnit_proc)
         vlay.addWidget(self.ChanTab['UnitTabsWidget'])
@@ -710,20 +634,18 @@ class SpikeSorter(QtGui.QMainWindow):
         ax.set_axis_bgcolor('k')
         ax.set_xticklabels([])
         ax.set_yticklabels([])
-        self.SampleWaveform, = ax.plot([], color=[.5,.5,.5], linewidth=2)
+        self.SampleWaveform, = ax.plot([], color=[.5, .5, .5], linewidth=2)
         self.Waveforms, = ax.plot([], animated=True)
         ax.set_ylim(-1000, 1000)
-        ax.set_xlim(0,32)
+        ax.set_xlim(0, 32)
 
         # Create Slice plots
         self.Slice1Ln = ax.axvline(0, color=[.5, .5, .5])
-        self.Slice2Ln = ax.axvline(0, color=[.5, .5, .5], linestyle = '--')
-        #ax.set_title('Raw Waveforms')
+        self.Slice2Ln = ax.axvline(0, color=[.5, .5, .5], linestyle='--')
         ax.grid()
         wavesfig.canvas.mpl_connect('draw_event', self.draw_callback)
 
-        ###### FEATURES PLOT WIDGET #################
-
+        #------------------------------------------------- FEATURES PLOT WIDGET
         mainRightLay = QtGui.QVBoxLayout()
 
         tab = QtGui.QTabWidget()
@@ -777,11 +699,11 @@ class SpikeSorter(QtGui.QMainWindow):
         vlay.addLayout(hlay)
 
         # Features figure and toolbar
-        self.ChanTab['FeaturesFig']    = matplotlib_widgets.MplWidget()
+        self.ChanTab['FeaturesFig'] = matplotlib_widgets.MplWidget()
         self.ChanTab['FeaturesFig'].figure.set_facecolor('k')
         self.ChanTab['FeaturesFigNtb'] = matplotlib_widgets.NavToolbar(self.ChanTab['FeaturesFig'].figure.canvas,
-                                                            self.ChanTab['MainWidget'])
-        self.ChanTab['FeaturesFigNtb'].setIconSize(QtCore.QSize(15,15))
+                                                                       self.ChanTab['MainWidget'])
+        self.ChanTab['FeaturesFigNtb'].setIconSize(QtCore.QSize(15, 15))
         self.ChanTab['FeaturesFigNtb'].setMaximumHeight(30)
 
         vlay.addWidget(self.ChanTab['FeaturesFig'])
@@ -790,37 +712,33 @@ class SpikeSorter(QtGui.QMainWindow):
         vlay.setMargin(0)
         vlay.setSpacing(1)
 
-        #widget.setLayout(vlay)
-        tab.addTab(widget,'2D')
+        tab.addTab(widget, '2D')
         mainRightLay.addWidget(tab)
 
-        ###### 3D TAB Widget  #######################################
-        #self.Widget3d = mayavi_widgets.MayaviQWidget()
+        #-------------------------------------------------------- 3D TAB Widget
         self.Widget3d = gl.GLViewWidget()
-        tab.addTab(self.Widget3d,'3D')
-        #self.Fig3d = self.Widget3d.visualization.scene.mlab
+        tab.addTab(self.Widget3d, '3D')
 
-        ######## Spikes vs time visualization widget #################
-
+        #---------------------------------- Spikes vs time visualization widget
         # add a figure adn axes
         self.TimeScroll = {}
-        self.TimeScroll['Figure']  = matplotlib_widgets.MplWidget()
+        self.TimeScroll['Figure'] = matplotlib_widgets.MplWidget()
         self.TimeScroll['Figure'].figure.set_facecolor('k')
-        self.TimeScroll['DrawFigCID']  = self.TimeScroll['Figure'].figure.canvas.mpl_connect('draw_event', self.DrawScrollFig_Func)
-        self.TimeScroll['Figure'].setMaximumHeight(QtGui.QApplication.desktop().availableGeometry().height()/6)
+        self.TimeScroll['DrawFigCID'] = self.TimeScroll['Figure'].figure.canvas.mpl_connect('draw_event', self.DrawScrollFig_Func)
+        self.TimeScroll['Figure'].setMaximumHeight(QtGui.QApplication.desktop().availableGeometry().height() / 6)
         self.TimeScroll['Ax'] = self.TimeScroll['Figure'].figure.add_subplot(111)
         self.TimeScroll['Ax'].set_axis_bgcolor('k')
         self.TimeScroll['Ax'].set_ylim(-1500, 1500)
         self.TimeScroll['Ax'].set_xticklabels([])
         self.TimeScroll['Ax'].set_yticklabels([])
         self.TimeScroll['Ax'].set_axis_off()
-        self.TimeScroll['Plot'], = self.TimeScroll['Ax'].plot([],color=[.5, .5, .5])
+        self.TimeScroll['Plot'], = self.TimeScroll['Ax'].plot([], color=[.5, .5, .5])
         self.TimeScroll['Figure'].figure.tight_layout()
         self.TimeScroll['Figure'].figure.canvas.draw()
 
         # add a vertical zoom slider
         self.TimeScroll['VZoom'] = QtGui.QSlider(QtCore.Qt.Vertical)
-        self.TimeScroll['VZoom'].setMaximumHeight(QtGui.QApplication.desktop().availableGeometry().height()/6)
+        self.TimeScroll['VZoom'].setMaximumHeight(QtGui.QApplication.desktop().availableGeometry().height() / 6)
         self.TimeScroll['VZoom'].setMinimum(100)
         self.TimeScroll['VZoom'].setMaximum(5000)
         self.TimeScroll['VZoom'].setValue(1000)
@@ -831,7 +749,7 @@ class SpikeSorter(QtGui.QMainWindow):
         mainRightLay.addLayout(hlay)
 
         # add an horizontal zoom slider
-        self.TimeScroll['HZoom']  = QtGui.QSlider(QtCore.Qt.Horizontal)
+        self.TimeScroll['HZoom'] = QtGui.QSlider(QtCore.Qt.Horizontal)
         self.TimeScroll['HZoom'].setRange(5, 5000)
         self.TimeScroll['HZoom'].setValue(500)
         self.TimeScroll['HZoom'].setSingleStep(5)
@@ -853,7 +771,7 @@ class SpikeSorter(QtGui.QMainWindow):
         # add a time slider
         self.TimeScroll['HScroll'] = QtGui.QSlider(QtCore.Qt.Horizontal)
         self.TimeScroll['HScroll'].setRange(0, 3000000)
-        self.TimeScroll['HScroll'].setSingleStep(self.TimeScroll['HZoom'].value()/10)
+        self.TimeScroll['HScroll'].setSingleStep(self.TimeScroll['HZoom'].value() / 10)
         self.TimeScroll['HScroll'].valueChanged.connect(self.HScroll_Func)
         self.TimeScroll['HSpin'] = QtGui.QSpinBox()
         self.TimeScroll['HSpin'].setRange(0, 3000000)
@@ -896,26 +814,16 @@ class SpikeSorter(QtGui.QMainWindow):
         # finally show the object
         self.show()
 
-    ########################################################################################################
-    ################### METHODS ############################################################################
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def SaveOverviewFig_proc(self):
         if self.H5FileLoaded:
-            fname = str(QtGui.QFileDialog.getSaveFileName(directory = self.h5file.filename[0:-3]+'_sorted.png'))
+            fname = str(QtGui.QFileDialog.getSaveFileName(directory=self.h5file.filename[0:-3] + '_sorted.png'))
             if fname:
-                self.OverviewTab1['Figure'].figure.savefig(fname, dpi = 300, facecolor = 'k')
+                self.OverviewTab1['Figure'].figure.savefig(fname,
+                                                           dpi=300,
+                                                           facecolor='k')
 
-    ########################################################################################################
-
-
-    def resizeEvent(self, *event):
-        # reimplementation of the resize event to apply tight_layout to
-        # all the figures
-        pass
-
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def AdjustPlots_proc(self):
         self.TimeScroll['Figure'].figure.tight_layout()
         self.TimeScroll['Figure'].figure.canvas.draw()
@@ -923,11 +831,11 @@ class SpikeSorter(QtGui.QMainWindow):
         self.ChanTab['WavesFigure'].figure.tight_layout()
         self.ChanTab['WavesFigure'].figure.canvas.draw()
 
-        if len(self.ChanTab['FeaturesFig'].figure.axes)>0:
+        if len(self.ChanTab['FeaturesFig'].figure.axes) > 0:
             self.ChanTab['FeaturesFig'].figure.tight_layout()
             self.ChanTab['FeaturesFig'].figure.canvas.draw()
 
-        if len(self.OverviewTab1['Figure'].figure.axes)>0:
+        if len(self.OverviewTab1['Figure'].figure.axes) > 0:
             self.OverviewTab1['Figure'].figure.tight_layout()
             self.OverviewTab1['Figure'].figure.canvas.draw()
 
@@ -935,54 +843,52 @@ class SpikeSorter(QtGui.QMainWindow):
             self.ChanTab['UnitFigures'][k].figure.tight_layout()
             self.ChanTab['UnitFigures'][k].figure.canvas.draw()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def SetWfPlotLim_proc(self):
         sender = self.sender()
         ax = self.ChanTab['WavesFigure'].figure.axes[0]
-        #curlim = ax.get_ylim()
         lim = sender.value()
         ax.set_ylim(-lim, lim)
         self.ChanTab['WavesFigure'].figure.canvas.draw()
 
-
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def HScroll_Func(self):
         ''' This function gets triggered whenever the user moves the bottom
         scrollbar in the lower right. It helps to explore the raw waveforms'''
 
-        if not self.ChanPlotted: return
+        if not self.ChanPlotted:
+            return
+
         self.TimeScroll['Figure'].figure.canvas.restore_region(self.TimeScroll['bg'])
         self.ChanTab['WavesFigure'].figure.canvas.restore_region(self.ChanTab['WavesFigBG'])
 
         v = self.TimeScroll['HScroll'].value()
         h = self.TimeScroll['HZoom'].value()
-        indx = np.flatnonzero(np.logical_and(self.CurTs>=v, self.CurTs<(v+h)))
+        indx = np.flatnonzero(np.logical_and(self.CurTs >= v, self.CurTs < (v + h)))
 
         if any(indx):
             # ontain the timestamps corresponding to the indexes
             Ts = self.CurNode.TimeStamp[indx]
             # substract the first timestamp to have a 0 based indexing
-            Ts = Ts-v
+            Ts = Ts - v
 
             # obtain the waveforms to plot
-            Wf = self.CurNode.Waveforms[indx,:]
+            Wf = self.CurNode.Waveforms[indx, :]
 
             # obtain the length of units to plot
             n = len(indx)
 
             # create an array of Nones to append
-            nones = np.array(n*[None], ndmin=2).transpose()
+            nones = np.array(n * [None], ndmin=2).transpose()
 
             # append nones to the waveforms array and reshape it to a vector
-            Wf = np.append(Wf, nones, axis=1).reshape((n*(self.WfSize+1),))
+            Wf = np.append(Wf, nones, axis=1).reshape((n * (self.WfSize + 1),))
 
             # create a vector time, based on the sampling frequency, the
             # the number of points per spike and the timestamp
-            Ts = np.tile(Ts, (self.WfSize,1)).transpose() + \
-                 np.tile(np.linspace(0, self.End, self.WfSize),(n,1))
-            Ts = np.append(Ts, nones, axis=1).reshape((n*(self.WfSize+1),))
+            Ts = np.tile(Ts, (self.WfSize, 1)).T + \
+                np.tile(np.linspace(0, self.End, self.WfSize), (n, 1))
+            Ts = np.append(Ts, nones, axis=1).reshape((n * (self.WfSize + 1),))
 
             # set the plot data to the created arrays
             self.TimeScroll['Plot'].set_data(Ts, Wf)
@@ -990,35 +896,32 @@ class SpikeSorter(QtGui.QMainWindow):
             # set axes limits
             self.TimeScroll['Ax'].set_xlim(0, h)
             self.TimeScroll['Ax'].draw_artist(self.TimeScroll['Plot'])
-            self.SampleWaveform.set_data(self.WaveformXax*n, Wf)
+            self.SampleWaveform.set_data(self.WaveformXax * n, Wf)
             self.ChanTab['WavesFigure'].figure.axes[0].draw_artist(self.SampleWaveform)
 
         self.TimeScroll['Figure'].figure.canvas.blit(self.TimeScroll['Figure'].figure.bbox)
         self.ChanTab['WavesFigure'].figure.canvas.blit(self.ChanTab['WavesFigure'].figure.axes[0].bbox)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def VZoom_Func(self):
         v = self.TimeScroll['VZoom'].value()
-        self.TimeScroll['Ax'].set_ylim(-v,v)
+        self.TimeScroll['Ax'].set_ylim(-v, v)
         self.TimeScroll['Figure'].figure.canvas.restore_region(self.TimeScroll['bg'])
         self.TimeScroll['Ax'].draw_artist(self.TimeScroll['Plot'])
         self.TimeScroll['Figure'].figure.canvas.blit(self.TimeScroll['Figure'].figure.bbox)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def HZoom_Func(self):
         v = self.TimeScroll['HZoom'].value()
-        self.TimeScroll['HScroll'].setSingleStep(v/10)
+        self.TimeScroll['HScroll'].setSingleStep(v / 10)
         self.HScroll_Func()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def DrawScrollFig_Func(self, event):
-        self.TimeScroll['bg'] = self.TimeScroll['Figure'].figure.canvas.copy_from_bbox(self.TimeScroll['Figure'].figure.axes[0].bbox)
+        fig = self.TimeScroll['Figure'].figure
+        self.TimeScroll['bg'] = fig.canvas.copy_from_bbox(fig.axes[0].bbox)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def LoadH5File(self):
         ''' Loads an h5 file that contains all the information about the units:
         waveforms and timestamps '''
@@ -1039,7 +942,7 @@ class SpikeSorter(QtGui.QMainWindow):
             return
 
         # set file loaded var = True
-        if hasattr(self, 'H5FileLoaded') and self.H5FileLoaded == True:
+        if hasattr(self, 'H5FileLoaded') and self.H5FileLoaded:
             self.h5file.close()
 
         # try to open the file
@@ -1056,10 +959,10 @@ class SpikeSorter(QtGui.QMainWindow):
         self.H5FileLoaded = True
         self.FilePath = os.path.split(f)[0]
 
-        ### REPAIR THE H5FILE STRUCTURE
+        # REPAIR THE H5FILE STRUCTURE
 
         if self.h5file.__contains__('/Chans'):
-            self.h5file.renameNode('/', 'Spikes', name = 'Chans')
+            self.h5file.renameNode('/', 'Spikes', name='Chans')
 
         chanNodes = self.h5file.listNodes('/Spikes')
 
@@ -1069,37 +972,44 @@ class SpikeSorter(QtGui.QMainWindow):
                 if re.search('Unit[0-9]{2}(?!_isMultiunit)', n._v_name) and n._c_classId != 'GROUP':
                     unitName = re.search('Unit[0-9]{2}(?!_isMultiunit)', n._v_name).group()
 
-                    self.h5file.create_group(where = where, name = unitName+'_grp')
-                    self.h5file.moveNode(where = where, name = unitName,
-                                    newparent = '/Spikes/%s/%s' % (k._v_name, unitName+'_grp'),
-                                    newname = 'Indx')
-                    self.h5file.renameNode(where = where, name = unitName+'_grp', newname = unitName)
+                    self.h5file.create_group(where=where,
+                                             name=unitName + '_grp')
+
+                    self.h5file.moveNode(where=where,
+                                         name=unitName,
+                                         newparent='/Spikes/%s/%s' % (k._v_name, unitName + '_grp'),
+                                         newname='Indx')
+
+                    self.h5file.renameNode(where=where,
+                                           name=unitName + '_grp',
+                                           newname=unitName)
 
                 elif re.search('Unit[0-9]{2}_isMultiunit', n._v_name):
-                    self.h5file.remove_node(where = where, name = re.search('Unit[0-9]{2}_isMultiunit', n._v_name).group())
+                    self.h5file.remove_node(where=where,
+                                            name=re.search('Unit[0-9]{2}_isMultiunit', n._v_name).group())
 
-                elif n._v_name.find('tmp') != -1:
-                    self.h5file.remove_node(where = where, name = n._v_name, recursive = True)
+                elif 'tmp' in n._v_name:
+                    self.h5file.remove_node(where=where, name=n._v_name, recursive=True)
 
-        ### CREATE 'isMultiunit' and 'isBursting' fields
+        # CREATE 'isMultiunit' and 'isBursting' fields
         chanNodes = self.h5file.listNodes('/Spikes')
 
         for k in chanNodes:
             node = '/Spikes/%s' % k._v_name
             for n in k:
-                if n._v_name.find('Unit') != -1 and n._c_classId == 'GROUP':
+                if 'Unit' in n._v_name and n._c_classId == 'GROUP':
                     parent = node + '/' + n._v_name
-                    if not self.h5file.__contains__(parent+'/'+'isMultiunit'):
+                    if not self.h5file.__contains__(parent + '/' + 'isMultiunit'):
                         self.h5file.create_array(parent, 'isMultiunit', False)
-                    if not self.h5file.__contains__(parent+'/'+'isBursting'):
+                    if not self.h5file.__contains__(parent + '/' + 'isBursting'):
                         self.h5file.create_array(parent, 'isBursting', False)
 
-        ### RENAME the "Indexes" field to "Indx"
+        # RENAME the "Indexes" field to "Indx"
         chanNodes = self.h5file.listNodes('/Spikes')
 
         for k in chanNodes:
             for n in k:
-                if n._v_name.find('Unit') != -1:
+                if 'Unit' in n._v_name:
                     nodeName = '/Spikes/%s/%s' % (k._v_name, n._v_name)
                     for l in n:
                         if l._v_name == 'Indexes':
@@ -1108,22 +1018,22 @@ class SpikeSorter(QtGui.QMainWindow):
         # save changes to disk
         self.h5file.flush()
 
-        ##### REPAIR UNIT NAMES #####
+        # REPAIR UNIT NAMES #####
         chanNodes = self.h5file.listNodes('/Spikes')
 
         for chan in chanNodes:
-            unitNames = [k for k in chan.__members__ if k.find('Unit')!=-1]
+            unitNames = [k for k in chan.__members__ if 'Unit' in k]
             unitNames.sort()
-            for j,k in enumerate(unitNames):
+            for j, k in enumerate(unitNames):
                 if k != 'Unit%02d' % j:
-                    self.h5file.renameNode('/Spikes/%s' % chan._v_name , name = k, newname = 'Unit%02d' % j)
+                    self.h5file.renameNode('/Spikes/%s' % chan._v_name, name=k,
+                                           newname='Unit%02d' % j)
 
         # save changes to disk
         self.h5file.flush()
-        ###############################################
 
         # clean the channel figures if something already plotted
-        if hasattr(self, 'ChanPlotted') and self.ChanPlotted == True:
+        if hasattr(self, 'ChanPlotted') and self.ChanPlotted:
             self.ResetChannelTab_proc()
 
         self.PlotOverview()
@@ -1137,10 +1047,9 @@ class SpikeSorter(QtGui.QMainWindow):
             self.LogCombo.addItems(nodeNames)
 
         # set window title = to filename
-        self.setWindowTitle('Spike Sorter GUI '+f)
+        self.setWindowTitle('Spike Sorter GUI ' + f)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def PlotOverview(self):
         ''' plot an overview of 1000 spikes per channel.
         Also, fills the overview table with the general information about each
@@ -1150,7 +1059,7 @@ class SpikeSorter(QtGui.QMainWindow):
         chanNodes = self.h5file.listNodes('/Spikes')
 
         # get the number of the channels in the file
-        self.ChansList = [int(re.search('(?<=Chan_)[0-9]{3}',k._v_name).group()) for k in chanNodes]
+        self.ChansList = [int(re.search('(?<=Chan_)[0-9]{3}', k._v_name).group()) for k in chanNodes]
 
         # get the waveform size (number of points). X is for fast plotting
         self.WfSize = self.h5file.root.Header.WaveformSize.read()
@@ -1170,30 +1079,30 @@ class SpikeSorter(QtGui.QMainWindow):
         self.OverviewTab2['OverviewTable'].clearContents()
         c = range(self.OverviewTab2['OverviewTable'].rowCount())
         c.reverse()
-        for k in c: self.OverviewTab2['OverviewTable'].removeRow(k)
-
+        for k in c:
+            self.OverviewTab2['OverviewTable'].removeRow(k)
 
         # iterate over the list of channels to add the information to the table
         for j, k in enumerate(chanNodes):
 
             # update overveiew table
             self.OverviewTab2['OverviewTable'].insertRow(j)
-            self.OverviewTab2['OverviewTable'].setRowHeight(j,20)
+            self.OverviewTab2['OverviewTable'].setRowHeight(j, 20)
 
             # add an event count
-            self.OverviewTab2['OverviewTable'].setItem(j,0, QtGui.QTableWidgetItem(str(k.TimeStamp.nrows)))
+            self.OverviewTab2['OverviewTable'].setItem(j, 0, QtGui.QTableWidgetItem(str(k.TimeStamp.nrows)))
 
             # add an "isTrash" checkbox
             check = QtGui.QCheckBox()
             check.setProperty('Data', self.ChansList[j])
             check.stateChanged.connect(self.setTrash_proc)
-            self.OverviewTab2['OverviewTable'].setCellWidget(j,1,check)
+            self.OverviewTab2['OverviewTable'].setCellWidget(j, 1, check)
 
             # add an "isMultinunit" checkbox
             isMultiunitCheck = QtGui.QCheckBox()
             isMultiunitCheck.setObjectName(k._v_name)
             isMultiunitCheck.stateChanged.connect(self.isMultiunit_proc)
-            self.OverviewTab2['OverviewTable'].setCellWidget(j,2,isMultiunitCheck)
+            self.OverviewTab2['OverviewTable'].setCellWidget(j, 2, isMultiunitCheck)
 
             # add information about unsorted units
             if k.__contains__('Unsorted'):
@@ -1204,43 +1113,43 @@ class SpikeSorter(QtGui.QMainWindow):
                 self.OverviewTab2['OverviewTable'].setItem(j, 5, QtGui.QTableWidgetItem(str(k.ValidWFs.nrows)))
 
             # add info about each unit
-            units = [m for m in k.__members__ if re.search('Unit[0-9]{2}', m)] # obtain unit names
+            units = [m for m in k.__members__ if re.search('Unit[0-9]{2}', m)]  # obtain unit names
             units.sort()
-            if units: # in case there are units
-                for m,n in enumerate(units):
-                    if self.OverviewTab2['OverviewTable'].columnCount() <= (m+6):
+            if units:  # in case there are units
+                for m, n in enumerate(units):
+                    if self.OverviewTab2['OverviewTable'].columnCount() <= (m + 6):
                         self.OverviewTab2['OverviewTable'].insertColumn(self.OverviewTab2['OverviewTable'].columnCount())
                         nCols = self.OverviewTab2['OverviewTable'].columnCount()
-                        self.OverviewTab2['OverviewTable'].setColumnWidth(nCols-1, 65)
-                        self.OverviewTab2['OverviewTable'].setHorizontalHeaderItem(nCols-1,
+                        self.OverviewTab2['OverviewTable'].setColumnWidth(nCols - 1, 65)
+                        self.OverviewTab2['OverviewTable'].setHorizontalHeaderItem(nCols - 1,
                                                                                    QtGui.QTableWidgetItem('Unit%02d' % m))
 
-                    self.OverviewTab2['OverviewTable'].setItem(j, m+6,
+                    self.OverviewTab2['OverviewTable'].setItem(j, m + 6,
                                                                QtGui.QTableWidgetItem(str(k.__getattr__(n).Indx.nrows)))
 
             # Create the axes to plot the waveforms
-            self.OverviewTab1['Figure'].figure.add_subplot(figrows, 10, j+1)
-            self.OverviewTab1['Figure'].figure.axes[j].set_yticks([],[]) # eliminate the ticks to have more space
-            self.OverviewTab1['Figure'].figure.axes[j].set_xticks([],[]) # eliminate the ticks to have more space
+            self.OverviewTab1['Figure'].figure.add_subplot(figrows, 10, j + 1)
+            self.OverviewTab1['Figure'].figure.axes[j].set_yticks([], [])  # eliminate the ticks to have more space
+            self.OverviewTab1['Figure'].figure.axes[j].set_xticks([], [])  # eliminate the ticks to have more space
             self.OverviewTab1['Figure'].figure.axes[j].set_axis_off()
             self.OverviewTab1['Figure'].figure.axes[j].set_title('Ch %d' % (self.ChansList[j]),
-                                                                 fontsize = 10,
-                                                                 fontdict={'color':'w'})
+                                                                 fontsize=10,
+                                                                 fontdict={'color': 'w'})
 
-            self.PlotChanOverview_proc(k, axes2Plot = self.OverviewTab1['Figure'].figure.axes[j])
+            self.PlotChanOverview_proc(k, axes2Plot=self.OverviewTab1['Figure'].figure.axes[j])
 
             # check the isTrash widgets and make the axes background yellow
             if k.__contains__('isTrash'):
-                if k.isTrash.read() == True:
+                if k.isTrash.read():
                     check.setCheckState(2)
                     self.OverviewTab1['Figure'].figure.axes[j].set_axis_bgcolor([.5, .5, .5])
 
             if k.__contains__('isMultiunit'):
-                if k.isMultiunit.read()==True:
+                if k.isMultiunit.read():
                     isMultiunitCheck.setCheckState(2)
 
         # set the names of the vertical headers
-        self.OverviewTab2['OverviewTable'].setVerticalHeaderLabels(['Ch '+str(k) for k in self.ChansList])
+        self.OverviewTab2['OverviewTable'].setVerticalHeaderLabels(['Ch ' + str(k) for k in self.ChansList])
 
         # set alternating row colors
         self.OverviewTab2['OverviewTable'].setAlternatingRowColors(True)
@@ -1253,14 +1162,13 @@ class SpikeSorter(QtGui.QMainWindow):
         self.OverviewTab1['Figure'].figure.canvas.draw()
 
         # get the sampling frequency
-        self.Sf     = float(self.h5file.root.Header.TimeStamp_Res.read())
+        self.Sf = float(self.h5file.root.Header.TimeStamp_Res.read())
 
-        self.Step   = self.WfSize+1
+        self.Step = self.WfSize + 1
 
         # set boolean variable
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def PlotChanOverview_proc(self, node, axes2Plot):
         '''Helper function that plots the unsorted as well as the sorted events
         in a given axes on the overview figure'''
@@ -1271,34 +1179,36 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # iterate over the members of a node
         for k in node:
-            if not re.search('Unsorted|Unit[0-9]{2}', k._v_name): continue
+            if not re.search('Unsorted|Unit[0-9]{2}', k._v_name):
+                continue
 
             # read the indices first:
             if k._v_name.find('Unit') != -1:
                 if k.Indx.nrows >= nEvents:
-                    indx = k.Indx.read(start = 0, stop = k.Indx.nrows, step = k.Indx.nrows/nEvents)
+                    indx = k.Indx.read(start=0, stop=k.Indx.nrows, step=k.Indx.nrows / nEvents)
                 else:
                     indx = k.Indx.read()
             elif k._v_name.find('Unsorted') != -1:
                 if k.nrows >= nEvents:
-                    indx = k.read(start = 0, stop = k.nrows, step = k.nrows/nEvents)
+                    indx = k.read(start=0, stop=k.nrows, step=k.nrows / nEvents)
                 else:
                     indx = k.read()
 
             # obtain the waveforms
-            Wf = Waveforms[indx,:]
-            if not Wf.any(): continue
+            Wf = Waveforms[indx, :]
+            if not Wf.any():
+                continue
 
-            #### faster plotting strategy:
+            # faster plotting strategy:
 
             # obtain the length of units to plot
             n = len(indx)
 
             # create an array of Nones to append
-            nones = np.array(n*[None], ndmin=2).transpose()
+            nones = np.array(n * [None], ndmin=2).T
 
             # append nones to the waveforms array and reshape it to a vector
-            Wf = np.append(Wf, nones, axis=1).reshape((n*(self.WfSize+1),))
+            Wf = np.append(Wf, nones, axis=1).reshape((n * (self.WfSize + 1),))
 
             # create the x axis
             Ts = range(self.WfSize)
@@ -1308,36 +1218,36 @@ class SpikeSorter(QtGui.QMainWindow):
             if k._v_name == 'Unsorted':
                 color = 'w'
                 zorder = 1
-            elif k._v_name.find('Unit')!=-1:
+            elif 'Unit' in k._v_name:
                 # get the unit number
                 zorder = int(re.search('[0-9]{2}', k._v_name).group())
-                color = self.UnitColors[zorder,:]
-                zorder = 100-zorder
+                color = self.UnitColors[zorder, :]
+                zorder = 100 - zorder
 
             # get the list of plots in the particular axes
             l = [l for l in axes2Plot.lines if str(l.get_label()) == k._v_name]
 
             # if a plot with a label equal to the name of the unit exist, the update the data
-            if len(l)>0:
-                l[0].set_data(Ts*n, Wf)
+            if len(l) > 0:
+                l[0].set_data(Ts * n, Wf)
             # if not create one
             else:
-                axes2Plot.plot(Ts*n, Wf, color = color, rasterized =  True,
-                               alpha = 0.5, label = k._v_name, zorder = zorder)
+                axes2Plot.plot(Ts * n, Wf, color=color, rasterized=True,
+                               alpha=0.5, label=k._v_name, zorder=zorder)
 
         # set the limits of the axes
         axes2Plot.set_ylim(-self.OverviewYLimsSpin.value(), self.OverviewYLimsSpin.value())
 
         # add a small text box with the event count
         bbox_props = dict(boxstyle='round', fc='0.75', ec='0.25', alpha=0.8)
-        axes2Plot.text(0.5, 0, 'Count: %d' % node.TimeStamp.nrows, transform = axes2Plot.transAxes,
-                       color = 'k', bbox = bbox_props, size = 10, ha = 'center')
+        axes2Plot.text(0.5, 0, 'Count: %d' % node.TimeStamp.nrows, transform=axes2Plot.transAxes,
+                       color='k', bbox=bbox_props, size=10, ha='center')
 
-    ##################################################################################################
-
+    #__________________________________________________________________________
     def ChangeOverviewYLim_Proc(self):
 
-        if not self.H5FileLoaded: return
+        if not self.H5FileLoaded:
+            return
 
         lim = self.OverviewYLimsSpin.value()
         for k in self.OverviewTab1['Figure'].figure.axes:
@@ -1345,12 +1255,12 @@ class SpikeSorter(QtGui.QMainWindow):
 
         self.OverviewTab1['Figure'].figure.canvas.draw()
 
-    ##################################################################################################
-
+    #__________________________________________________________________________
     def PlotChanProc(self):
 
         # exit if ther is no H5 file loaded
-        if not self.H5FileLoaded: return
+        if not self.H5FileLoaded:
+            return
 
         # clean the channels tab
         self.ResetChannelTab_proc()
@@ -1363,20 +1273,20 @@ class SpikeSorter(QtGui.QMainWindow):
         # load waveforms for a specific channel
         self.CurChan = int(self.ChanSelector.currentText())
         #nspikes = self.NSpikesSlider.value()
-        self.CurNodeName  = '/Spikes/Chan_%03d' % self.CurChan
-        self.CurNode      = self.h5file.getNode(self.CurNodeName)
+        self.CurNodeName = '/Spikes/Chan_%03d' % self.CurChan
+        self.CurNode = self.h5file.getNode(self.CurNodeName)
         self.CurWaveforms = self.CurNode.Waveforms.read()
-        self.CurTs        = self.CurNode.TimeStamp.read()
+        self.CurTs = self.CurNode.TimeStamp.read()
         self.TimeScroll['HScroll'].setMaximum(int(self.CurTs[-1]))
         self.TimeScroll['HSpin'].setMaximum(int(self.CurTs[-1]))
-        self.unitNodes = [k for k in self.h5file.listNodes(self.CurNodeName) if re.search('Unit[0-9]{2}',k._v_name)]
+        self.unitNodes = [k for k in self.h5file.listNodes(self.CurNodeName) if re.search('Unit[0-9]{2}', k._v_name)]
 
         # get the indices of the unsorted. If there are no, create one
         if not self.CurNode.__contains__('Unsorted'):
             self.Unsorted = np.arange(len(self.CurTs))
-            self.h5file.create_array(self.CurNodeName,'Unsorted', self.Unsorted)
+            self.h5file.create_array(self.CurNodeName, 'Unsorted', self.Unsorted)
         else:
-            self.Unsorted = self.h5file.getNode(self.CurNodeName,'Unsorted').read()
+            self.Unsorted = self.h5file.getNode(self.CurNodeName, 'Unsorted').read()
 
         #set the unit names in the combo box
         self.What2Plot.clear()
@@ -1407,13 +1317,13 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # grab background from the Waveforms Figure to make animations
         self.ChanTab['WavesFigBG'] = self.ChanTab['WavesFigure'].figure.canvas.copy_from_bbox(self.ChanTab['WavesFigure'].figure.axes[0].bbox)
-        self.MainFigTab.setTabText(2,'Chan %02d' % self.CurChan)
+        self.MainFigTab.setTabText(2, 'Chan %02d' % self.CurChan)
 
         # calculate PCA
         pc = PCA(self.CurWaveforms)
 
         # put data in a KDTree to easily calculate distance with the cursor
-        self.XYData = cKDTree(pc.Y[:,0:2],1000)
+        self.XYData = cKDTree(pc.Y[:, 0:2], 1000)
         self.ChanTab['PCA'] = pc.Y
 
         # set the internal variable to true
@@ -1427,20 +1337,19 @@ class SpikeSorter(QtGui.QMainWindow):
         # the selected feature
         self.PlotFeatures()
 
-        if self.ChanTab['UnitTabsWidget'].count()>0:
+        if self.ChanTab['UnitTabsWidget'].count() > 0:
             self.ChanTab['UnitTabsWidget'].setCurrentIndex(0)
             self.CurUnitName = str(self.ChanTab['UnitTabsWidget'].tabText(0))
-            self.CurUnit = int(re.search('(?<=Unit)[0-9]{2}',self.CurUnitName).group())
+            self.CurUnit = int(re.search('(?<=Unit)[0-9]{2}', self.CurUnitName).group())
 
         self.WaveformXax = range(self.WfSize)
         self.WaveformXax.append(None)
-        self.End = 1000*self.WfSize/self.Sf
+        self.End = 1000 * self.WfSize / self.Sf
 
         # save h5file changes to disk
         self.h5file.flush()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def setTrash_proc(self):
         sender = self.sender()
         chan = sender.property('Data').toPyObject()
@@ -1451,7 +1360,7 @@ class SpikeSorter(QtGui.QMainWindow):
         if self.h5file.getNode(nodeName).__contains__('isTrash'):
             self.h5file.remove_node(nodeName, 'isTrash')
 
-        if sender.checkState() in [1,2]:
+        if sender.checkState() in [1, 2]:
             self.h5file.create_array(nodeName, 'isTrash', True)
             self.OverviewTab1['Figure'].figure.axes[indx].set_axis_bgcolor('y')
         elif sender.checkState() == 0:
@@ -1461,8 +1370,7 @@ class SpikeSorter(QtGui.QMainWindow):
         # save changes to disk
         self.h5file.flush()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def isMultiunit_proc(self):
         sender = self.sender()
         nodeName = '/Spikes/%s' % sender.objectName()
@@ -1470,7 +1378,7 @@ class SpikeSorter(QtGui.QMainWindow):
         if self.h5file.getNode(nodeName).__contains__('isMultiunit'):
             self.h5file.remove_node(nodeName, 'isMultiunit')
 
-        if sender.checkState() in [1,2]:
+        if sender.checkState() in [1, 2]:
             self.h5file.create_array(nodeName, 'isMultiunit', True)
         elif sender.checkState() == 0:
             self.h5file.create_array(nodeName, 'isMultiunit', False)
@@ -1478,33 +1386,33 @@ class SpikeSorter(QtGui.QMainWindow):
         # save changes to disk
         self.h5file.flush()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def TrashChans_proc(self):
         '''Utility function to mark the channels with fewer than a defined number
         of units'''
 
         # check whether an h5file has been loaded
-        if not self.H5FileLoaded: return
+        if not self.H5FileLoaded:
+            return
 
         # obtain parameters
-        n     = self.MarkTrashSpin.value()
+        n = self.MarkTrashSpin.value()
         chans = self.h5file.listNodes('/Spikes')
 
         # iterate over nodes in h5file; if fewer than n mark as trash
-        for l,k in enumerate(chans):
-            j = int(re.search('(?<=Chan_)[0-9]{3}',k._v_name).group())
+        for l, k in enumerate(chans):
+            j = int(re.search('(?<=Chan_)[0-9]{3}', k._v_name).group())
             if k.TimeStamp.nrows < n:
                 self.OverviewTab1['Figure'].figure.axes[l].set_axis_bgcolor('y')
                 self.OverviewTab2['OverviewTable'].cellWidget(l, 1).setChecked(True)
-                if self.h5file.getNode('/Spikes','Chan_%03d' % j).__contains__('isTrash'):
+                if self.h5file.getNode('/Spikes', 'Chan_%03d' % j).__contains__('isTrash'):
                     self.h5file.remove_node('/Spikes/Chan_%03d' % j, 'isTrash')
                 self.h5file.create_array('/Spikes/Chan_%03d' % j, 'isTrash', True)
 
             else:
                 self.OverviewTab1['Figure'].figure.axes[l].set_axis_bgcolor('w')
                 self.OverviewTab2['OverviewTable'].cellWidget(l, 1).setChecked(False)
-                if self.h5file.getNode('/Spikes','Chan_%03d' % j).__contains__('isTrash'):
+                if self.h5file.getNode('/Spikes', 'Chan_%03d' % j).__contains__('isTrash'):
                     self.h5file.remove_node('/Spikes/Chan_%03d' % j, 'isTrash')
                 self.h5file.create_array('/Spikes/Chan_%03d' % j, 'isTrash', False)
 
@@ -1514,11 +1422,11 @@ class SpikeSorter(QtGui.QMainWindow):
         #update the overview
         self.OverviewTab1['Figure'].figure.canvas.draw()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def DeleteTrashChans_proc(self):
         # check whether an h5file has been loaded
-        if not self.H5FileLoaded: return
+        if not self.H5FileLoaded:
+            return
 
         chans = self.h5file.listNodes('/Spikes')
         chans.reverse()
@@ -1526,38 +1434,37 @@ class SpikeSorter(QtGui.QMainWindow):
         n.reverse()
 
         delchans = []
-        for j,k in zip(n, chans):
-            state = self.OverviewTab2['OverviewTable'].cellWidget(j,1).checkState()
+        for j, k in zip(n, chans):
+            state = self.OverviewTab2['OverviewTable'].cellWidget(j, 1).checkState()
 
             if state == 2:
                 delchans.append(k._v_name)
                 self.h5file.remove_node('/Spikes', k._v_name, recursive=True)
-                    #self.OverviewTab1['Figure'].figure.delaxes(self.OverviewTab1['Figure'].figure.axes[j])
 
-        if len(delchans)>0:
-            self.AddLog('Deleted channels: '+str(delchans))
+        if len(delchans) > 0:
+            self.AddLog('Deleted channels: ' + str(delchans))
 
         self.PlotOverview()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def ResetChan_proc(self):
         ''' check whether an h5file has been loaded '''
-        if not self.H5FileLoaded or not self.ChanPlotted: return
+        if not self.H5FileLoaded or not self.ChanPlotted:
+            return
 
         for k in self.h5file.listNodes(self.CurNodeName):
-            if k._v_name not in ['Waveforms','TimeStamp','isTrash']:
-                self.h5file.remove_node(self.CurNodeName, k._v_name, recursive = True)
+            if k._v_name not in ['Waveforms', 'TimeStamp', 'isTrash']:
+                self.h5file.remove_node(self.CurNodeName, k._v_name, recursive=True)
 
         self.PlotChanProc()
         self.AddLog('%s resetted' % self.CurNodeName)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def AddLog(self, message):
         ''' add log to to keep a history of changes to the file '''
 
-        if not self.H5FileLoaded: return
+        if not self.H5FileLoaded:
+            return
 
         if not self.h5file.__contains__('/Log'):
             self.h5file.create_group('/', 'Log', 'History of changes')
@@ -1570,67 +1477,61 @@ class SpikeSorter(QtGui.QMainWindow):
         #add the item to the log browser
         self.LogCombo.addItem(name)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def SetLogText_proc(self):
-        if self.LogCombo.currentIndex == -1: return
+        if self.LogCombo.currentIndex == -1:
+            return
         node = str(self.LogCombo.currentText())
         if node:
-            log = self.h5file.getNode('/Log',node).read()
+            log = self.h5file.getNode('/Log', node).read()
             self.LogTextBrowser.setText(log)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def CloseFile(self):
         ''' close the h5 file'''
-        if self.H5FileLoaded == False:  return
+        if not self.H5FileLoaded:
+            return
         self.h5file.flush()
         self.h5file.close()
         self.H5FileLoaded = False
         print 'h5 File closed'
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def SelChannel(self, event):
         ''' selects a channel when axes are clicked'''
         if event.inaxes:
-            chan = int(re.search('(?<=Ch )[0-9]{1,3}',event.inaxes.get_title()).group())
+            chan = int(re.search('(?<=Ch )[0-9]{1,3}', event.inaxes.get_title()).group())
             c = [int(self.ChanSelector.itemText(k)) for k in range(self.ChanSelector.count())].index(chan)
             self.ChanSelector.setCurrentIndex(c)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def TableRowChanged_proc(self, sel):
         self.ChanSelector.setCurrentIndex(sel)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def Settings(self):
         ''' edit paths'''
         if settings.edit() == 1:
             self.WorkingDir = settings.WorkingDir
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def AutocorrOpts(self):
         if autocorropts.edit() == 1:
             pass
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def About(self):
         ''' opens a small dialog with information about the software'''
         self.AboutMsg.show()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def NearestPoint(self, event):
         ''' when right button clicked over the features window, calculates the closest
         point and plots its corresponding waveform'''
 
-        if event.button==3 and event.inaxes and self.ChanTab['FeaturesFigNtb'].mode=='':
+        if event.button == 3 and event.inaxes and self.ChanTab['FeaturesFigNtb'].mode == '':
             featuresax = self.ChanTab['FeaturesFig'].figure.axes[0]
-            wavesax    = self.ChanTab['WavesFigure'].figure.axes[0]
+            wavesax = self.ChanTab['WavesFigure'].figure.axes[0]
 
             if self.PlotUnitCounter >= self.NUnitsSpin.value():
                 self.ChanTab['WavesFigure'].figure.canvas.restore_region(self.ChanTab['WavesFigBG'])
@@ -1639,23 +1540,23 @@ class SpikeSorter(QtGui.QMainWindow):
             for k in self.ChanTab['FeaturesFigBG']:
                 self.ChanTab['FeaturesFig'].figure.canvas.restore_region(k)
 
-            _,res = self.XYData.query([event.xdata, event.ydata], 1)
-            self.cursor.set_data(self.XYData.data[res,0], self.XYData.data[res,1])
-            self.SampleWaveform.set_data(range(self.WfSize), self.CurWaveforms[self.dataIndx[res],: ])
+            _, res = self.XYData.query([event.xdata, event.ydata], 1)
+            self.cursor.set_data(self.XYData.data[res, 0], self.XYData.data[res, 1])
+            self.SampleWaveform.set_data(range(self.WfSize), self.CurWaveforms[self.dataIndx[res], :])
 
             featuresax.draw_artist(self.cursor)
             wavesax.draw_artist(self.SampleWaveform)
             self.ChanTab['FeaturesFig'].figure.canvas.blit(featuresax.bbox)
             self.ChanTab['WavesFigure'].figure.canvas.blit(wavesax.bbox)
-            self.PlotUnitCounter+=1
+            self.PlotUnitCounter += 1
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def draw_callback(self, event):
         ''' any draw callback triggers the capture of the figure background for
         using it in the animations '''
 
-        if not self.ChanPlotted: return
+        if not self.ChanPlotted:
+            return
 
         if event.canvas == self.ChanTab['FeaturesFig'].figure.canvas:
             bg = []
@@ -1665,8 +1566,7 @@ class SpikeSorter(QtGui.QMainWindow):
         elif event.canvas == self.ChanTab['WavesFigure'].figure.canvas:
             self.ChanTab['WavesFigBG'] = self.ChanTab['WavesFigure'].figure.canvas.copy_from_bbox(self.ChanTab['WavesFigure'].figure.axes[0].bbox)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def PlotFeatures(self):
         ''' determines what 2 plot based on the user choices'''
 
@@ -1910,8 +1810,8 @@ class SpikeSorter(QtGui.QMainWindow):
                 indx = range(0, lx, lx / self.nPtsSpin.value())
             else:
                 indx = range(lx)
-            ax1.plot(x[indx], y[indx], ',', color=[.5, .5, .5]
-                     , label='data_Unsorted',
+            ax1.plot(x[indx], y[indx], ',', color=[.5, .5, .5],
+                     label='data_Unsorted',
                      rasterized=True,
                      zorder=10)
 
@@ -1974,8 +1874,7 @@ class SpikeSorter(QtGui.QMainWindow):
         self.ChanTab['FeaturesFig'].figure.tight_layout()
         self.ChanTab['FeaturesFig'].figure.canvas.draw()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def Plot3DFeatures(self):
 
         # obtain labels and return if are the same
@@ -2026,105 +1925,104 @@ class SpikeSorter(QtGui.QMainWindow):
             x = x / 100.0
 
         elif xlabel == 'Slice2':
-            x = self.CurWaveforms[self.dataIndx, self.SliceSpBx2.value()]/100.0
-            x = x/100.0
+            x = self.CurWaveforms[self.dataIndx, self.SliceSpBx2.value()] / 100.0
+            x = x / 100.0
 
         elif xlabel == 'Energy':
-            x = np.sum(np.power(self.CurWaveforms[self.dataIndx,:], 2), axis=1)
-            x = x/1000000.0
+            x = np.sum(np.power(self.CurWaveforms[self.dataIndx, :], 2), axis=1)
+            x = x / 1000000.0
 
         elif xlabel == 'Peak':
-            x = self.CurWaveforms[self.dataIndx,:].max(axis=1)
-            x = x/100.0
+            x = self.CurWaveforms[self.dataIndx, :].max(axis=1)
+            x = x / 100.0
 
         elif xlabel == 'Valley':
-            x = self.CurWaveforms[self.dataIndx,:].min(axis=1)
-            x = x/100.0
+            x = self.CurWaveforms[self.dataIndx, :].min(axis=1)
+            x = x / 100.0
 
         elif xlabel == 'Pk2Pk Amp':
-            x = self.CurWaveforms[self.dataIndx,:].max(axis=1)-self.CurWaveforms[self.dataIndx,:].min(axis=1)
-            x = x/100.0
+            x = self.CurWaveforms[self.dataIndx, :].max(axis=1) - self.CurWaveforms[self.dataIndx, :].min(axis=1)
+            x = x / 100.0
 
         elif xlabel == 'Time':
             x = self.CurTs[self.dataIndx]
-            x = x/60000.0
-
+            x = x / 60000.0
 
         # get the choice for the y axis
         if ylabel == 'PCA1':
-            y = pc[:,0]
+            y = pc[:, 0]
 
         elif ylabel == 'PCA2':
-            y = pc[:,1]
+            y = pc[:, 1]
 
         elif ylabel == 'PCA3':
-            y = pc[:,2]
+            y = pc[:, 2]
 
         elif ylabel == 'Slice1':
-            y = self.CurWaveforms[self.dataIndx, self.SliceSpBx1.value()]/100.0
-            y = y/100.0
+            y = self.CurWaveforms[self.dataIndx, self.SliceSpBx1.value()] / 100.0
+            y = y / 100.0
 
         elif ylabel == 'Slice2':
-            y = self.CurWaveforms[self.dataIndx, self.SliceSpBx2.value()]/100.0
-            y = y/100.0
+            y = self.CurWaveforms[self.dataIndx, self.SliceSpBx2.value()] / 100.0
+            y = y / 100.0
 
         elif ylabel == 'Energy':
-            y = np.sum(np.power(self.CurWaveforms[self.dataIndx,:], 2), axis=1)
-            y = y/1000000.0
+            y = np.sum(np.power(self.CurWaveforms[self.dataIndx, :], 2), axis=1)
+            y = y / 1000000.0
 
         elif ylabel == 'Peak':
-            y = self.CurWaveforms[self.dataIndx,:].max(axis=1)
-            y = y/100.0
+            y = self.CurWaveforms[self.dataIndx, :].max(axis=1)
+            y = y / 100.0
 
         elif ylabel == 'Valley':
-            y = self.CurWaveforms[self.dataIndx,:].min(axis=1)
-            y = y/100.0
+            y = self.CurWaveforms[self.dataIndx, :].min(axis=1)
+            y = y / 100.0
 
         elif ylabel == 'Pk2Pk Amp':
-            y = self.CurWaveforms[self.dataIndx,:].max(axis=1)-self.CurWaveforms[self.dataIndx,:].min(axis=1)
-            y = y/100.0
+            y = self.CurWaveforms[self.dataIndx, :].max(axis=1) - self.CurWaveforms[self.dataIndx, :].min(axis=1)
+            y = y / 100.0
 
         elif ylabel == 'Time':
             y = self.CurTs[self.dataIndx]
-            y = y/60000.0
+            y = y / 60000.0
 
         # get the choice for the z axis
         if zlabel == 'PCA1':
-            z = pc[:,0]
+            z = pc[:, 0]
 
         elif zlabel == 'PCA2':
-            z = pc[:,1]
+            z = pc[:, 1]
 
         elif zlabel == 'PCA3':
-            z = pc[:,2]
+            z = pc[:, 2]
 
         elif zlabel == 'Slice1':
-            z = self.CurWaveforms[self.dataIndx, self.SliceSpBx1.value()]/100.0
-            z = z/100.0
+            z = self.CurWaveforms[self.dataIndx, self.SliceSpBx1.value()] / 100.0
+            z = z / 100.0
 
         elif zlabel == 'Slice2':
-            z = self.CurWaveforms[self.dataIndx, self.SliceSpBx2.value()]/100.0
-            z = z/100.0
+            z = self.CurWaveforms[self.dataIndx, self.SliceSpBx2.value()] / 100.0
+            z = z / 100.0
 
         elif zlabel == 'Energy':
-            z = np.sum(np.power(self.CurWaveforms[self.dataIndx,:], 2), axis=1)
-            z = y/1000000.0
+            z = np.sum(np.power(self.CurWaveforms[self.dataIndx, :], 2), axis=1)
+            z = z / 1000000.0
 
         elif zlabel == 'Peak':
-            z = self.CurWaveforms[self.dataIndx,:].max(axis=1)
-            z = y/100.0
+            z = self.CurWaveforms[self.dataIndx, :].max(axis=1)
+            z = z / 100.0
 
         elif zlabel == 'Valley':
-            z = self.CurWaveforms[self.dataIndx,:].min(axis=1)
-            z = y/100.0
+            z = self.CurWaveforms[self.dataIndx, :].min(axis=1)
+            z = z / 100.0
 
         elif zlabel == 'Pk2Pk Amp':
-            z = self.CurWaveforms[self.dataIndx,:].max(axis=1)-self.CurWaveforms[self.dataIndx,:].min(axis=1)
-            z = y/100.0
+            z = self.CurWaveforms[self.dataIndx, :].max(axis=1) - self.CurWaveforms[self.dataIndx, :].min(axis=1)
+            z = z / 100.0
 
         elif zlabel == 'Time':
             z = self.CurTs[self.dataIndx]
-            z = y/60000.0
+            z = z / 60000.0
 
         if What2Plot == 'All Waveforms' and self.CurNode.__contains__('ValidWFs'):
             valid = self.CurNode.ValidWFs.read()
@@ -2140,15 +2038,12 @@ class SpikeSorter(QtGui.QMainWindow):
         self.Widget3d.addItem(grid)
 
         if zlabel != 'Density':
-            handle = gl.GLScatterPlotItem(pos = np.array([x,y,z]).transpose(),
-                                                     size = np.ones(x.size),
-                                                     color = (1.0, 0.0, 0.0, 1.0),
-                                                     pxMode = True)
-                                                    #sp2.translate(5,5,0)
+            handle = gl.GLScatterPlotItem(pos=np.array([x, y, z]).T,
+                                          size=np.ones(x.size),
+                                          color=(1.0, 0.0, 0.0, 1.0),
+                                          pxMode=True)
             self.Widget3d.addItem(handle)
-            #self.Fig3d.clf()
-            #self.Fig3d.points3d(x,y,z, mode = 'point')
-            #self.Fig3d.axes()
+
         else:
             #pass
 
@@ -2158,46 +2053,46 @@ class SpikeSorter(QtGui.QMainWindow):
             #ylim = ax1.get_ylim()
 
             # search for the unsorted or the units plots to obatin data
-            xpts = []; ypts = []
+            xpts = []
+            ypts = []
             for k in ax1.get_children():
                 if re.search('Unsorted|Unit', str(k.get_label())):
                     data = k.get_data()
                     xpts.extend(data[0])
                     ypts.extend(data[1])
-            xypoints = np.array([xpts,ypts]).transpose()
+            xypoints = np.array([xpts, ypts]).T
 
             # check wich points are inside the axes
             verts = ax1.viewLim.corners()
             verts[2] = ax1.viewLim.corners()[3]
             verts[3] = ax1.viewLim.corners()[2]
 
-
             inpoly = Path(verts).contains_points(xypoints)
 
             # create a 2d histogram of the data and scale it logaritmically
-            h, _, _ = np.histogram2d(xypoints[inpoly,0], xypoints[inpoly,1],
-                                      bins = self.PlotDensityBins.value(), normed = False)
-            h[h<=0] = 1
+            h, _, _ = np.histogram2d(xypoints[inpoly, 0],
+                                     xypoints[inpoly, 1],
+                                     bins=self.PlotDensityBins.value(),
+                                     normed=False)
+            h[h <= 0] = 1
             h = np.log10(h)
-            x,y = h.shape
+            x, y = h.shape
             x, y = np.arange(x), np.arange(y)
-            handle = gl.GLSurfacePlotItem(x, y, z = 10*h/h.max(), shader = 'heightColor')
-            handle.translate(-x.size/2.0, -y.size/2.0, 0.0)
+            handle = gl.GLSurfacePlotItem(x, y, z=10 * h / h.max(),
+                                          shader='heightColor')
+            handle.translate(-x.size / 2.0, -y.size / 2.0, 0.0)
             handle.scale(1, 1, 2)
             self.Widget3d.addItem(handle)
-            #self.Fig3d.clf()
-            #self.Fig3d.barchart(h*10)
-            #self.Fig3d.axes()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def ValidateWFs_proc(self):
         ''' obtains the coordinates of the current feature axis, and uses it to
         determine wich points lay inside it.
         It also saves the data to the h5file'''
 
         # exits if there is no h5 file loaded or channel plotted
-        if not self.H5FileLoaded or not self.ChanPlotted: return
+        if not self.H5FileLoaded or not self.ChanPlotted:
+            return
 
         # get axes handle and limits
         ax = self.ChanTab['FeaturesFig'].figure.axes[0]
@@ -2211,14 +2106,14 @@ class SpikeSorter(QtGui.QMainWindow):
         p = Path(xyverts).contains_points(self.XYData.data)
 
         # in case no points were inside the axes
-        if len(p)==0:
+        if len(p) == 0:
             self.MsgBox.setIcon(QtGui.QMessageBox.Warning)
             self.MsgBox.setText('There were no selected points')
             self.MsgBox.setwindowTitle('Warning')
             self.MsgBox.show()
             return
 
-        self.ValidWFs   = np.flatnonzero(p)
+        self.ValidWFs = np.flatnonzero(p)
         self.InvalidWFs = np.flatnonzero(~p)
 
         # remove the 'ValidWFs' field if it already exists
@@ -2244,13 +2139,13 @@ class SpikeSorter(QtGui.QMainWindow):
         self.OverviewTab2['OverviewTable'].takeItem(row, 5)
         self.OverviewTab2['OverviewTable'].setItem(row, 5, item)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def ReplotDensity_proc(self):
         ''' replot density using all the resolution only to the visible points'''
 
         # check whether the number of axes in the figure
-        if len(self.ChanTab['FeaturesFig'].figure.axes)!=2: return
+        if len(self.ChanTab['FeaturesFig'].figure.axes) != 2:
+            return
 
         # obtain axes and first axes limits
         ax1 = self.ChanTab['FeaturesFig'].figure.axes[0]
@@ -2259,13 +2154,14 @@ class SpikeSorter(QtGui.QMainWindow):
         ylim = ax1.get_ylim()
 
         # search for the unsorted or the units plots to obatin data
-        xpts = []; ypts = []
+        xpts = []
+        ypts = []
         for k in ax1.get_children():
             if re.search('Unsorted|Unit', str(k.get_label())):
                 data = k.get_data()
                 xpts.extend(data[0])
                 ypts.extend(data[1])
-        xypoints = np.array([xpts,ypts]).transpose()
+        xypoints = np.array([xpts, ypts]).T
 
         # check wich points are inside the axes
         verts = ax1.viewLim.corners()
@@ -2275,14 +2171,16 @@ class SpikeSorter(QtGui.QMainWindow):
         inpoly = Path(verts).contains_points(xypoints)
 
         # create a 2d histogram of the data and scale it logaritmically
-        h,xd,yd = np.histogram2d(xypoints[inpoly,0], xypoints[inpoly,1],
-                                 bins = self.PlotDensityBins.value(), normed = False)
-        h[h<=0] = 1
+        h, xd, yd = np.histogram2d(xypoints[inpoly, 0], xypoints[inpoly, 1],
+                                   bins=self.PlotDensityBins.value(),
+                                   normed=False)
+        h[h <= 0] = 1
         h = np.log10(h)
 
         # clean axes No2 and plot the 2d histogram
         ax2.cla()
-        ax2.pcolor(xd, yd, h.transpose(), cmap =  helper_widgets.colormaps[settings.DensityCM])
+        cmap = helper_widgets.colormaps[settings.DensityCM]
+        ax2.pcolormesh(xd, yd, h.transpose(), cmap=cmap)
 
         # set axis limits
         ax2.set_xlim(xlim)
@@ -2295,17 +2193,17 @@ class SpikeSorter(QtGui.QMainWindow):
         ax2.set_yticklabels([])
 
         # create vertical and horizontal lines at 0
-        ax2.axvline(0,color=[.5, .5, .5])
-        ax2.axhline(0,color=[.5, .5, .5])
+        ax2.axvline(0, color=[.5, .5, .5])
+        ax2.axhline(0, color=[.5, .5, .5])
 
         # redraw the figure
         self.ChanTab['FeaturesFig'].figure.canvas.draw()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def AxesZoom_proc(self, ax):
 
-        xpts = []; ypts = []
+        xpts = []
+        ypts = []
         for k in ax.get_children():
             if re.search('Unsorted|Unit', str(k.get_label())):
                 data = k.get_data()
@@ -2317,21 +2215,21 @@ class SpikeSorter(QtGui.QMainWindow):
         verts[2] = ax.viewLim.corners()[3]
         verts[3] = ax.viewLim.corners()[2]
 
-##        inpoly = points_inside_poly(xypoints, verts)
-##        w = self.CurWaveforms[inpoly,:]
-##        self.ChanTab['WavesFigure'].figure.axes[0].set_ylim(w.min(), w.max())
-##        self.ChanTab['WavesFigure'].figure.canvas.draw()
+#        inpoly = points_inside_poly(xypoints, verts)
+#        w = self.CurWaveforms[inpoly,:]
+#        self.ChanTab['WavesFigure'].figure.axes[0].set_ylim(w.min(), w.max())
+#        self.ChanTab['WavesFigure'].figure.canvas.draw()
 
         if len(self.ChanTab['FeaturesFig'].figure.axes) == 2:
             self.ReplotDensity_proc()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def AutoClust_proc(self):
-        if not self.H5FileLoaded or not self.ChanPlotted: return
+        if not self.H5FileLoaded or not self.ChanPlotted:
+            return
 
         if self.XYData.data.shape[1] > 2:
-            data= self.XYData.data[:,0:2]
+            data = self.XYData.data[:, 0:2]
         else:
             data = self.XYData.data
 
@@ -2343,38 +2241,32 @@ class SpikeSorter(QtGui.QMainWindow):
         ax.set_axis_bgcolor('k')
 
         for k in range(len(clustIndx)):
-            ax.plot(data[clustIndx[k],0], data[clustIndx[k],1], '.', label = 'clust %d' % k)
+            ax.plot(data[clustIndx[k], 0], data[clustIndx[k], 1], '.',
+                    label='clust %d' % k)
 
-        ax.legend(fancybox=True, mode='expand', ncol=len(clustIndx)/2, loc=9, prop={'size':10})
+        ax.legend(fancybox=True, mode='expand', ncol=len(clustIndx) / 2,
+                  loc=9, prop={'size': 10})
         ax.grid(color='grey')
         fig.canvas.draw()
         self.sender().parentWidget().close()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def TrimWaveforms_proc(self, eclick, erelease):
 
         # first check whether there's any waveform plotted
         # if it is visible, and if it is the current unit
-        unitFound = False
-        for k in self.ChanTab['WavesFigure'].figure.axes[0].get_children():
-            try:
-                if k.get_label().find('Unit') != -1 and \
-                   k.get_visible() and \
-                   'Unit%02d' % self.CurUnit == k.get_label():
-                    unitFound = True
-                    break
-            except:
-                continue
-
-        if not unitFound:
+        for k in self.ChanTab['WavesFigure'].figure.axes[0].lines:
+            if 'Unit' in k.get_label() and k.get_visible() and \
+               k.get_label() == self.CurUnitName:
+                break
+        else:
             print "No units found in the plot ..."
             self.trimWaveformsRect.set_active(False)
             return
 
         # get the indices
         indx = self.h5file.getNode('/Spikes/Chan_%03d/%s' % (self.CurChan, self.CurUnitName), 'Indx').read()
-        data = self.CurWaveforms[indx,:]
+        data = self.CurWaveforms[indx, :]
 
         # get line equation y = mx + n
         x1 = eclick.xdata
@@ -2387,8 +2279,8 @@ class SpikeSorter(QtGui.QMainWindow):
             self.trimWaveformsRect.set_active(False)
             return
 
-        m = (y2 - y1)/(x2 - x1)
-        n = y1 - m*x1
+        m = (y2 - y1) / (x2 - x1)
+        n = y1 - m * x1
 
         # get the y value of nearest integer x:
         x = np.array([x1, x2])
@@ -2396,25 +2288,23 @@ class SpikeSorter(QtGui.QMainWindow):
         xData = range(self.WfSize)
         indx1 = np.flatnonzero(xData > x[0]).min()
         indx2 = np.flatnonzero(xData < x[1]).max()
-        y = np.array([m*xData[k]+n for k in range(indx1, indx2)])
+        y = np.array([m * xData[k] + n for k in range(indx1, indx2)])
         #print x, y
 
         # get the data bounded by the indices
-        data2 = data[:,indx1:indx2]
+        data2 = data[:, indx1:indx2]
         #print data2.shape, y.shape
-        t = data2-y
+        t = data2 - y
         #print t
         t = np.array(t)
 
         # get the indices that intersect the line
         intersect = []
-        for j,k in enumerate(t):
-            if (np.all(k<0) or np.all(k>0)) == False:
+        for j, k in enumerate(t):
+            if not (np.all(k < 0) or np.all(k > 0)):
                 intersect.append(j)
 
-        #print intersect
-
-        # update the node containing the unit indexes
+        # update the node containing the unit indices
         self.h5file.remove_node(self.CurNodeName + '/' + self.CurUnitName, 'Indx')
         self.h5file.create_array(self.CurNodeName + '/' + self.CurUnitName, 'Indx', np.delete(indx, intersect))
 
@@ -2432,9 +2322,9 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # update the information in the overview table
         row = self.ChanSelector.currentIndex()
-        self.OverviewTab2['OverviewTable'].takeItem(row, self.CurUnit+6)
+        self.OverviewTab2['OverviewTable'].takeItem(row, self.CurUnit + 6)
         lbl = QtGui.QTableWidgetItem(str(self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.nrows))
-        self.OverviewTab2['OverviewTable'].setItem(row, self.CurUnit+6, lbl)
+        self.OverviewTab2['OverviewTable'].setItem(row, self.CurUnit + 6, lbl)
 
         # update the information on the unit label
         self.ChanTab['UnitCountLabel'][self.CurUnitName].setText(str(self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.nrows))
@@ -2452,16 +2342,16 @@ class SpikeSorter(QtGui.QMainWindow):
 
         self.trimWaveformsRect.set_active(False)
 
+    #__________________________________________________________________________
     def ActivateTrimWaveforms_proc(self):
         self.trimWaveformsRect.set_active(True)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def plot_unit_waveforms(self):
 
         # get unit name and number
         unitName = str(self.ChanTab['UnitTabsWidget'].tabText(self.ChanTab['UnitTabsWidget'].currentIndex()))
-        unitNo   = int(re.search('(?<=Unit)[0-9]{2}', unitName).group())
+        unitNo = int(re.search('(?<=Unit)[0-9]{2}', unitName).group())
 
         # get axes handle and children labels
         fig = self.ChanTab['WavesFigure'].figure
@@ -2475,7 +2365,7 @@ class SpikeSorter(QtGui.QMainWindow):
         nrows = node.Indx.nrows
 
         if nrows > nspikes:
-            unitIndx = node.Indx.read(start = 0, stop = nrows, step = nrows/nspikes)
+            unitIndx = node.Indx.read(start=0, stop=nrows, step=nrows / nspikes)
         else:
             unitIndx = node.Indx.read()
 
@@ -2483,22 +2373,20 @@ class SpikeSorter(QtGui.QMainWindow):
         n = len(unitIndx)
 
         # create an array of Nones to append
-        nones = np.array(n*[None], ndmin=2).transpose()
+        nones = np.array(n * [None], ndmin=2).T
 
         # create the x indexes
-        Ts = np.tile(np.arange(self.WfSize),(n,1))
-        Ts = np.append(Ts, nones, axis = 1).reshape((n*(self.WfSize+1),))
+        Ts = np.tile(np.arange(self.WfSize), (n, 1))
+        Ts = np.append(Ts, nones, axis=1).reshape((n * (self.WfSize + 1),))
 
         # get the waveforms, append nones, and reshape it to a vector
-        Wf = self.CurNode.Waveforms[unitIndx,:]
-        Wf = np.append(Wf, nones, axis=1).reshape((n*(self.WfSize+1),))
+        Wf = self.CurNode.Waveforms[unitIndx, :]
+        Wf = np.append(Wf, nones, axis=1).reshape((n * (self.WfSize + 1),))
 
         # create the plot if it doesn't exists
         if unitName not in childrenLabels:
-            ax.plot(Ts, Wf,
-                    color = self.UnitColors[unitNo,:],
-                    alpha = 0.7,
-                    label = unitName)
+            ax.plot(Ts, Wf, color=self.UnitColors[unitNo, :], alpha=0.7,
+                    label=unitName)
 
         # if exists update the data
         elif unitName in childrenLabels:
@@ -2511,83 +2399,90 @@ class SpikeSorter(QtGui.QMainWindow):
 
         fig.canvas.draw()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def AddUnit_proc(self):
         ''' starts a lasso instance to draw a line around a ROI'''
         # check whether there is a channel ploted
-        if not self.ChanPlotted: return
+        if not self.ChanPlotted:
+            return
 
         # check if what is plotted is all waveforms or unsorted
         title = str(self.ChanTab['FeaturesFig'].figure.axes[0].get_title())
-        if not re.search('Waveforms|Unsorted', title): return
+        if not re.search('Waveforms|Unsorted', title):
+            return
 
         # return if a tool is selected in the toolbar
-        if self.ChanTab['FeaturesFigNtb'].mode!='': return
+        if self.ChanTab['FeaturesFigNtb'].mode != '':
+            return
 
         # create a new lasso instance
         self.LassoCID = self.ChanTab['FeaturesFig'].figure.canvas.mpl_connect('button_press_event',
                                                                               self.LassoAddUnit_proc)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def Keep_proc(self):
         ''' starts a lasso instance to draw a line around a ROI'''
         # check whether there is a channel ploted
-        if not self.ChanPlotted: return
+        if not self.ChanPlotted:
+            return
 
         # check if a unit is plotted
         title = str(self.ChanTab['FeaturesFig'].figure.axes[0].get_title())
-        if not re.search('Unit', title): return
+        if not re.search('Unit', title):
+            return
 
         self.What2Plot.count()
 
         # return if a tool is selected in the toolbar
-        if self.ChanTab['FeaturesFigNtb'].mode!='': return
+        if self.ChanTab['FeaturesFigNtb'].mode != '':
+            return
 
         # create a new lasso instance
         self.LassoCID = self.ChanTab['FeaturesFig'].figure.canvas.mpl_connect('button_press_event',
                                                                               self.LassoKeep_proc)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def AddRegion_proc(self):
         ''' starts a lasso instance to draw a line around a ROI'''
 
         # check whether there is a channel ploted
-        if not self.ChanPlotted: return
+        if not self.ChanPlotted:
+            return
 
         # check if what is plotted is all waveforms or unsorted
         title = str(self.ChanTab['FeaturesFig'].figure.axes[0].get_title())
-        if not re.search('Waveforms|Unsorted', title): return
+        if not re.search('Waveforms|Unsorted', title):
+            return
 
         # return if a tool is selected in the toolbar
-        if self.ChanTab['FeaturesFigNtb'].mode!='': return
+        if self.ChanTab['FeaturesFigNtb'].mode != '':
+            return
 
         # create a new lasso instance
         self.LassoCID = self.ChanTab['FeaturesFig'].figure.canvas.mpl_connect('button_press_event',
                                                                               self.LassoAddRegion_proc)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def RemoveRegion_proc(self):
         ''' starts a lasso instance to draw a line around a ROI'''
         # check whether there is a channel ploted
-        if not self.ChanPlotted: return
+        if not self.ChanPlotted:
+            return
 
         # check if what is plotted is all waveforms or unsorted
         title = str(self.ChanTab['FeaturesFig'].figure.axes[0].get_title())
-        if not re.search('Unit', title): return
+        if not re.search('Unit', title):
+            return
 
         # return if a tool is selected in the toolbar
-        if self.ChanTab['FeaturesFigNtb'].mode!='': return
+        if self.ChanTab['FeaturesFigNtb'].mode != '':
+            return
 
         # create a new lasso instance
         self.LassoCID = self.ChanTab['FeaturesFig'].figure.canvas.mpl_connect('button_press_event',
                                                                               self.LassoRemoveRegion_proc)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def LassoAddUnit_proc(self, event):
         if self.ChanTab['FeaturesFig'].figure.canvas.widgetlock.locked():
             if hasattr(self, 'LassoCID'):
@@ -2595,7 +2490,7 @@ class SpikeSorter(QtGui.QMainWindow):
                 del self.LassoCID
             return
 
-        if event.inaxes is None or event.button !=1:
+        if event.inaxes is None or event.button != 1:
             if hasattr(self, 'LassoCID'):
                 self.ChanTab['FeaturesFig'].figure.canvas.mpl_disconnect(self.LassoCID)
                 del self.LassoCID
@@ -2603,11 +2498,11 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # create a lasso instance
         self.lasso = matplotlib_widgets.MyLasso(event.inaxes, (event.xdata, event.ydata),
-                                     self.LassoCallback_AddUnit, color = 'gray', lw=1)
+                                                self.LassoCallback_AddUnit,
+                                                color='gray', lw=1)
         self.ChanTab['FeaturesFig'].figure.canvas.widgetlock(self.lasso)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def LassoKeep_proc(self, event):
         if self.ChanTab['FeaturesFig'].figure.canvas.widgetlock.locked():
             if hasattr(self, 'LassoCID'):
@@ -2615,7 +2510,7 @@ class SpikeSorter(QtGui.QMainWindow):
                 del self.LassoCID
             return
 
-        if event.inaxes is None or event.button !=1:
+        if event.inaxes is None or event.button != 1:
             if hasattr(self, 'LassoCID'):
                 self.ChanTab['FeaturesFig'].figure.canvas.mpl_disconnect(self.LassoCID)
                 del self.LassoCID
@@ -2624,11 +2519,11 @@ class SpikeSorter(QtGui.QMainWindow):
         self.KeepBtn.setCheckable(True)
         self.KeepBtn.setChecked(True)
         self.lasso = matplotlib_widgets.MyLasso(event.inaxes, (event.xdata, event.ydata),
-                                     self.LassoCallback_Keep, color = 'gray', lw=1)
+                                                self.LassoCallback_Keep,
+                                                color='gray', lw=1)
         self.ChanTab['FeaturesFig'].figure.canvas.widgetlock(self.lasso)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def LassoAddRegion_proc(self, event):
         if self.ChanTab['FeaturesFig'].figure.canvas.widgetlock.locked():
             if hasattr(self, 'LassoCID'):
@@ -2636,18 +2531,18 @@ class SpikeSorter(QtGui.QMainWindow):
                 del self.LassoCID
             return
 
-        if event.inaxes is None or event.button !=1:
+        if event.inaxes is None or event.button != 1:
             if hasattr(self, 'LassoCID'):
                 self.ChanTab['FeaturesFig'].figure.canvas.mpl_disconnect(self.LassoCID)
                 del self.LassoCID
             return
 
         self.lasso = matplotlib_widgets.MyLasso(event.inaxes, (event.xdata, event.ydata),
-                                     self.LassoCallback_AddRegion, color = 'gray', lw=1)
+                                                self.LassoCallback_AddRegion,
+                                                color='gray', lw=1)
         self.ChanTab['FeaturesFig'].figure.canvas.widgetlock(self.lasso)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def LassoRemoveRegion_proc(self, event):
         if self.ChanTab['FeaturesFig'].figure.canvas.widgetlock.locked():
             if hasattr(self, 'LassoCID'):
@@ -2655,18 +2550,18 @@ class SpikeSorter(QtGui.QMainWindow):
                 del self.LassoCID
             return
 
-        if event.inaxes is None or event.button !=1:
+        if event.inaxes is None or event.button != 1:
             if hasattr(self, 'LassoCID'):
                 self.ChanTab['FeaturesFig'].figure.canvas.mpl_disconnect(self.LassoCID)
                 del self.LassoCID
             return
 
         self.lasso = matplotlib_widgets.MyLasso(event.inaxes, (event.xdata, event.ydata),
-                                     self.LassoCallback_RemoveRegion, color = 'gray', lw=1)
+                                                self.LassoCallback_RemoveRegion,
+                                                color='gray', lw=1)
         self.ChanTab['FeaturesFig'].figure.canvas.widgetlock(self.lasso)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def LassoCallback_AddUnit(self, verts):
 
         # disconnect Lasso callback
@@ -2684,7 +2579,7 @@ class SpikeSorter(QtGui.QMainWindow):
         n = len(verts)
         self.verts = np.array(verts)
         if n > 25:
-            self.verts = self.verts[range(0, n, n/25)]
+            self.verts = self.verts[range(0, n, n / 25)]
 
         #pdb.set_trace()
 
@@ -2693,14 +2588,14 @@ class SpikeSorter(QtGui.QMainWindow):
 
         if re.search('Waveforms', ax.get_title()):
             # test which points are inside the lasso
-            xypoints = self.XYData.data[self.Unsorted,:]
+            xypoints = self.XYData.data[self.Unsorted, :]
         elif re.search('Unsorted', ax.get_title()):
             xypoints = self.XYData.data
 
         p = Path(self.verts).contains_points(xypoints)
 
         # in case there were no points selected
-        if len(p)==0:
+        if len(p) == 0:
             self.MsgBox.setIcon(QtGui.QMessageBox.Warning)
             self.MsgBox.setText('There were no selected points')
             self.MsgBox.setwindowTitle('Warning')
@@ -2717,36 +2612,36 @@ class SpikeSorter(QtGui.QMainWindow):
                 break
 
         # obtain the unsorted points
-        unsortedData = xypoints[~p,:]
+        unsortedData = xypoints[~p, :]
         lunsort = len(unsortedData)
 
         # select some indices to plot
         if lunsort > self.nPtsSpin.value():
-            indx = range(0, lunsort, lunsort/self.nPtsSpin.value())
+            indx = range(0, lunsort, lunsort / self.nPtsSpin.value())
         else:
             indx = range(lunsort)
 
         # replot the unsorted without the corresponding points to the new unit
-        k.set_data(unsortedData[:,0][indx], unsortedData[:,1][indx])
+        k.set_data(unsortedData[:, 0][indx], unsortedData[:, 1][indx])
         ax.draw_artist(k)
 
         # select some indices to plot
-        unitData = xypoints[p,:]
+        unitData = xypoints[p, :]
         lunit = len(unitData)
 
         if lunit > self.nPtsSpin.value():
-            indx = range(0, lunit, lunit/self.nPtsSpin.value())
+            indx = range(0, lunit, lunit / self.nPtsSpin.value())
         else:
             indx = range(lunit)
 
-        ax.plot(unitData[:,0][indx], unitData[:,1][indx],
-                linestyle = '',
-                marker = ',',
-                mfc = self.UnitColors[self.NUnits],
-                mec = self.UnitColors[self.NUnits],
-                label = 'data_'+self.CurUnitName)
+        ax.plot(unitData[:, 0][indx], unitData[:, 1][indx],
+                linestyle='',
+                marker=',',
+                mfc=self.UnitColors[self.NUnits],
+                mec=self.UnitColors[self.NUnits],
+                label='data_' + self.CurUnitName)
 
-        self.NUnits+=1
+        self.NUnits += 1
 
         # if unit name not in combo box add it
         if self.CurUnitName not in [str(self.What2Plot.itemText(k)) for k in range(self.What2Plot.count())]:
@@ -2754,11 +2649,11 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # add the indexes of the current unit to the h5file
         if self.h5file.getNode(self.CurNodeName).__contains__(self.CurUnitName):
-            self.h5file.remove_node(self.CurNodeName, self.CurUnitName, recursive = True)
+            self.h5file.remove_node(self.CurNodeName, self.CurUnitName, recursive=True)
         self.h5file.create_group(self.CurNodeName, self.CurUnitName)
-        self.h5file.create_array(self.CurNodeName  + '/' + self.CurUnitName, 'Indx', self.Unsorted[p])
-        self.h5file.create_array(self.CurNodeName  + '/' + self.CurUnitName, 'isMultiunit', False)
-        self.h5file.create_array(self.CurNodeName  + '/' + self.CurUnitName, 'isBursting', False)
+        self.h5file.create_array(self.CurNodeName + '/' + self.CurUnitName, 'Indx', self.Unsorted[p])
+        self.h5file.create_array(self.CurNodeName + '/' + self.CurUnitName, 'isMultiunit', False)
+        self.h5file.create_array(self.CurNodeName + '/' + self.CurUnitName, 'isBursting', False)
 
         # update the list of unsorted indexes
         self.Unsorted = self.Unsorted[~p]
@@ -2782,14 +2677,14 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # update the overview figure
         for k in self.OverviewTab1['Figure'].figure.axes:
-            if k.get_title().find(str(self.CurChan))!=-1:
+            if k.get_title().find(str(self.CurChan)) != -1:
                 break
-        self.PlotChanOverview_proc(self.CurNode, axes2Plot = k)
+
+        self.PlotChanOverview_proc(self.CurNode, axes2Plot=k)
         for l in k.lines:
             k.draw_artist(l)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def LassoCallback_Keep(self, verts):
         # disconnect Lasso callback from figure
         self.ChanTab['FeaturesFig'].figure.canvas.mpl_disconnect(self.LassoCID)
@@ -2806,7 +2701,7 @@ class SpikeSorter(QtGui.QMainWindow):
         n = len(verts)
         self.verts = np.array(verts)
         if n > 25:
-            self.verts = self.verts[range(0, n ,n/25)]
+            self.verts = self.verts[range(0, n, n / 25)]
 
         # test which points lay inside the polygon
         p = Path(self.verts).contains_points(self.XYData.data)
@@ -2821,7 +2716,7 @@ class SpikeSorter(QtGui.QMainWindow):
             return
 
         # create a KDTree object for efficient neighbor search
-        self.XYData = cKDTree(self.XYData.data[p,:])
+        self.XYData = cKDTree(self.XYData.data[p, :])
 
         # get unitname and number from the axes title
         ax = self.ChanTab['FeaturesFig'].figure.axes[0]
@@ -2831,12 +2726,13 @@ class SpikeSorter(QtGui.QMainWindow):
         # update plot:
         for k in ax.get_children():
             if re.search(str(k.get_label), self.CurUnitName):
-                k.set_data(self.XYData.data[:,0], self.XYData.data[:,1])
+                k.set_data(self.XYData.data[:, 0], self.XYData.data[:, 1])
                 ax.draw_artist(k)
                 break
 
         # return if no points selected
-        if len(p) < 1: return
+        if len(p) < 1:
+            return
 
         nodeName = self.CurNodeName + '/' + self.CurUnitName
 
@@ -2870,15 +2766,14 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # update the information in the overview table
         row = self.ChanSelector.currentIndex()
-        self.OverviewTab2['OverviewTable'].takeItem(row, self.CurUnit+6)
+        self.OverviewTab2['OverviewTable'].takeItem(row, self.CurUnit + 6)
         lbl = QtGui.QTableWidgetItem(str(self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.nrows))
-        self.OverviewTab2['OverviewTable'].setItem(row, self.CurUnit+6, lbl)
+        self.OverviewTab2['OverviewTable'].setItem(row, self.CurUnit + 6, lbl)
 
         # update the information on the unit label
         self.ChanTab['UnitCountLabel'][self.CurUnitName].setText(str(self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.nrows))
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def LassoCallback_AddRegion(self, verts):
 
         # disconnect the lasso from the canvas and redraw the figure
@@ -2896,7 +2791,7 @@ class SpikeSorter(QtGui.QMainWindow):
         n = len(verts)
         self.verts = np.array(verts)
         if n > 25:
-            self.verts = self.verts[range(0, n, n/25)]
+            self.verts = self.verts[range(0, n, n / 25)]
 
         # check whether there is any unit
         if not hasattr(self, 'CurUnitName') or not self.CurNode.__contains__(self.CurUnitName):
@@ -2911,18 +2806,18 @@ class SpikeSorter(QtGui.QMainWindow):
         # check what is plotted on the axes
         if re.search('Waveforms', str(ax.get_title())):
             # test which points are inside the lasso
-            p = Path(self.verts).contains_points(self.XYData.data[self.Unsorted,:])
-            self.XYData = cKDTree(self.XYData.data[self.Unsorted,:][p])
+            p = Path(self.verts).contains_points(self.XYData.data[self.Unsorted, :])
+            self.XYData = cKDTree(self.XYData.data[self.Unsorted, :][p])
 
         elif re.search('Unsorted', str(ax.get_title())):
             # test which points are inside the lasso
             p = Path(self.verts).contains_points(self.XYData.data)
-            self.XYData = cKDTree(self.XYData.data[p,:])
+            self.XYData = cKDTree(self.XYData.data[p, :])
 
         # update plot:
         for k in ax.get_children():
             if re.search(str(k.get_label), self.CurUnitName):
-                k.set_data(self.XYData.data[:,0], self.XYData.data[:,1])
+                k.set_data(self.XYData.data[:, 0], self.XYData.data[:, 1])
                 ax.draw_artist(k)
                 break
 
@@ -2952,16 +2847,16 @@ class SpikeSorter(QtGui.QMainWindow):
         unit = np.append(unit, indx)
         unit.sort()
         # create a new array in the h5file to hold the updated unit information
-        self.h5file.create_array(self.CurNodeName+ '/' + self.CurUnitName, 'Indx', unit)
+        self.h5file.create_array(self.CurNodeName + '/' + self.CurUnitName, 'Indx', unit)
 
         # save changes to disk
         self.h5file.flush()
 
         # update the information in the overview table
         row = self.ChanSelector.currentIndex()
-        self.OverviewTab2['OverviewTable'].takeItem(row, self.CurUnit+6)
+        self.OverviewTab2['OverviewTable'].takeItem(row, self.CurUnit + 6)
         lbl = QtGui.QTableWidgetItem(str(self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.nrows))
-        self.OverviewTab2['OverviewTable'].setItem(row, self.CurUnit+6, lbl)
+        self.OverviewTab2['OverviewTable'].setItem(row, self.CurUnit + 6, lbl)
 
         # update the information on the unit label
         self.ChanTab['UnitCountLabel'][self.CurUnitName].setText(str(self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.nrows))
@@ -2972,8 +2867,7 @@ class SpikeSorter(QtGui.QMainWindow):
         # replot the features
         self.PlotFeatures()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def LassoCallback_RemoveRegion(self, verts):
 
         # disconnect Lasso callback from figure
@@ -2988,13 +2882,14 @@ class SpikeSorter(QtGui.QMainWindow):
         n = len(verts)
         self.verts = np.array(verts)
         if n > 25:
-            self.verts = self.verts[range(0, n ,n/25)]
+            self.verts = self.verts[range(0, n, n / 25)]
 
         # test which points lay inside the polygon
         p = Path(self.verts).contains_points(self.XYData.data)
 
         # return if no points selected
-        if len(p) < 1: return
+        if len(p) < 1:
+            return
 
         # get unitname and number from the axes title
         ax = self.ChanTab['FeaturesFig'].figure.axes[0]
@@ -3022,9 +2917,9 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # update the information in the overview table
         row = self.ChanSelector.currentIndex()
-        self.OverviewTab2['OverviewTable'].takeItem(row, self.CurUnit+6)
+        self.OverviewTab2['OverviewTable'].takeItem(row, self.CurUnit + 6)
         lbl = QtGui.QTableWidgetItem(str(self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.nrows))
-        self.OverviewTab2['OverviewTable'].setItem(row, self.CurUnit+6, lbl)
+        self.OverviewTab2['OverviewTable'].setItem(row, self.CurUnit + 6, lbl)
 
         # update the information on the unit label
         self.ChanTab['UnitCountLabel'][self.CurUnitName].setText(str(self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.nrows))
@@ -3043,8 +2938,7 @@ class SpikeSorter(QtGui.QMainWindow):
         # erase lasso
         del self.lasso
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def UnitsTable_AddUnit(self, unitName):
         ''' creates a new tab per each new unit'''
 
@@ -3057,7 +2951,7 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # create a widget and a layout
         widget = QtGui.QWidget()
-        vlay   = QtGui.QVBoxLayout()
+        vlay = QtGui.QVBoxLayout()
         vlay.setSpacing(2)
         vlay.setMargin(0)
 
@@ -3074,7 +2968,7 @@ class SpikeSorter(QtGui.QMainWindow):
         self.ChanTab['UnitBtns'][unitName] = QtGui.QPushButton('Unit %02d' % unitNo)
         self.ChanTab['UnitBtns'][unitName].setMaximumHeight(20)
         self.ChanTab['UnitBtns'][unitName].clicked.connect(self.ChangeUnitColor_proc)
-        self.ChanTab['UnitBtns'][unitName].setStyleSheet('QPushButton {background: rgb%s}' % str(tuple(np.int16(255*self.UnitColors[unitNo]))))
+        self.ChanTab['UnitBtns'][unitName].setStyleSheet('QPushButton {background: rgb%s}' % str(tuple(np.int16(255 * self.UnitColors[unitNo]))))
         hlay.addWidget(self.ChanTab['UnitBtns'][unitName])
         hlay.addStretch(1)
 
@@ -3104,10 +2998,12 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # set the checkstate of the 'isMultiunit' check according to what is saved in the h5file
         if self.h5file.getNode('/Spikes/Chan_%03d/Unit%02d' % (self.CurChan, unitNo)).__contains__('isMultiunit'):
-            isMultiunit  = self.h5file.getNode('/Spikes/Chan_%03d/Unit%02d' % (self.CurChan, unitNo),
-                                               'isMultiunit').read()
-            if isMultiunit: self.ChanTab['isMultiunitCheck'][unitName].setChecked(True)
-            else: self.ChanTab['isMultiunitCheck'][unitName].setChecked(False)
+            isMultiunit = self.h5file.getNode('/Spikes/Chan_%03d/Unit%02d' % (self.CurChan, unitNo),
+                                              'isMultiunit').read()
+            if isMultiunit:
+                self.ChanTab['isMultiunitCheck'][unitName].setChecked(True)
+            else:
+                self.ChanTab['isMultiunitCheck'][unitName].setChecked(False)
         else:
             self.h5file.create_array('/Spikes/Chan_%03d/Unit%02d' % (self.CurChan, unitNo), 'isMultiunit', False)
 
@@ -3132,10 +3028,11 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # add the figure widget
         self.ChanTab['UnitFigures'][unitName] = matplotlib_widgets.MplWidget()
-        self.ChanTab['UnitFigures'][unitName].setObjectName(unitName) # set the name of the object
+        self.ChanTab['UnitFigures'][unitName].setObjectName(unitName)  # set the name of the object
         self.ChanTab['UnitFigures'][unitName].figure.set_facecolor('k')
-        n = matplotlib_widgets.NavToolbar(self.ChanTab['UnitFigures'][unitName].figure.canvas, widget, coordinates = False)
-        n.setIconSize(QtCore.QSize(12,12))
+        n = matplotlib_widgets.NavToolbar(self.ChanTab['UnitFigures'][unitName].figure.canvas,
+                                          widget, coordinates=False)
+        n.setIconSize(QtCore.QSize(12, 12))
         n.setOrientation(QtCore.Qt.Vertical)
 
         vlay.addWidget(self.ChanTab['UnitFigures'][unitName])
@@ -3156,34 +3053,31 @@ class SpikeSorter(QtGui.QMainWindow):
         #    self.ChanTab['UnitTabsWidget'].removeTab(0)
 
         self.ChanTab['UnitTabsWidget'].addTab(widget, unitName)
-        indx = self.ChanTab['UnitTabsWidget'].count()-1
-        self.ChanTab['UnitTabsWidget'].tabBar().setTabTextColor(indx,
-                                                                QtGui.QColor(int(self.UnitColors[indx,0]*255),
-                                                                             int(self.UnitColors[indx,1]*255),
-                                                                             int(self.UnitColors[indx,2]*255)))
+        indx = self.ChanTab['UnitTabsWidget'].count() - 1
 
+        color = QtGui.QColor(*np.int32(self.UnitColors[indx] * 255))
+        self.ChanTab['UnitTabsWidget'].tabBar().setTabTextColor(indx, color)
 
         # update the information in the overview table
         row = self.ChanSelector.currentIndex()
 
-        if self.OverviewTab2['OverviewTable'].columnCount() <= (unitNo+6):
+        if self.OverviewTab2['OverviewTable'].columnCount() <= (unitNo + 6):
             self.OverviewTab2['OverviewTable'].insertColumn(self.OverviewTab2['OverviewTable'].columnCount())
             nCols = self.OverviewTab2['OverviewTable'].columnCount()
-            self.OverviewTab2['OverviewTable'].setColumnWidth(nCols-1, 65)
-            self.OverviewTab2['OverviewTable'].setHorizontalHeaderItem(nCols-1,
+            self.OverviewTab2['OverviewTable'].setColumnWidth(nCols - 1, 65)
+            self.OverviewTab2['OverviewTable'].setHorizontalHeaderItem(nCols - 1,
                                                                        QtGui.QTableWidgetItem('Unit%02d' % unitNo))
 
-        self.OverviewTab2['OverviewTable'].takeItem(row, unitNo+6)
+        self.OverviewTab2['OverviewTable'].takeItem(row, unitNo + 6)
         lbl = QtGui.QTableWidgetItem(str(self.h5file.getNode(self.CurNodeName, unitName).Indx.nrows))
-        self.OverviewTab2['OverviewTable'].setItem(row, unitNo+6, lbl)
+        self.OverviewTab2['OverviewTable'].setItem(row, unitNo + 6, lbl)
 
         # update the unsorted number in the overview table
         self.OverviewTab2['OverviewTable'].takeItem(row, 4)
         lbl = QtGui.QTableWidgetItem(str(len(self.Unsorted)))
         self.OverviewTab2['OverviewTable'].setItem(row, 4, lbl)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def PlotUnitFigure_proc(self):
 
         # get a unit name and number
@@ -3198,40 +3092,46 @@ class SpikeSorter(QtGui.QMainWindow):
             ax1 = fig.add_subplot(132)
             ax2 = fig.add_subplot(133)
         else:
-            ax0 = fig.axes[0]; ax0.cla()
-            ax1 = fig.axes[1]; ax1.cla()
-            ax2 = fig.axes[2]; ax2.cla()
+            ax0 = fig.axes[0]
+            ax0.cla()
+            ax1 = fig.axes[1]
+            ax1.cla()
+            ax2 = fig.axes[2]
+            ax2.cla()
 
         # set the axis background color
         ax0.set_axis_bgcolor('k')
         ax1.set_axis_bgcolor('k')
         ax2.set_axis_bgcolor('k')
 
-        ##### PLOT AVERAGE WAVEFORM #####
+        # PLOT AVERAGE WAVEFORM #####
         x = range(self.WfSize)
         p = self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.read()
-        m = self.CurWaveforms[p,:].mean(axis=0)
-        s = self.CurWaveforms[p,:].std(axis=0)
-        mn = self.CurWaveforms[p,:].min(axis=0)
-        mx = self.CurWaveforms[p,:].max(axis=0)
+        m = self.CurWaveforms[p, :].mean(axis=0)
+        s = self.CurWaveforms[p, :].std(axis=0)
+        mn = self.CurWaveforms[p, :].min(axis=0)
+        mx = self.CurWaveforms[p, :].max(axis=0)
 
         # plot average waveform
-        ax0.plot(x, m  , color = self.UnitColors[unitNo], lw=2, label = self.CurUnitName)
+        ax0.plot(x, m, color=self.UnitColors[unitNo], lw=2, label=self.CurUnitName)
 
         #plot shaded area of 3 standard devoations around it
-        ax0.fill_between(x, m+3*s, m-3*s, color = self.UnitColors[unitNo], alpha=0.5, label = self.CurUnitName)
+        ax0.fill_between(x, m + 3 * s, m - 3 * s, color=self.UnitColors[unitNo],
+                         alpha=0.5, label=self.CurUnitName)
 
         #plot maximum and minimum boundaries
-        ax0.fill_between(x, mx, mn, color = self.UnitColors[unitNo], alpha=0.35, label = self.CurUnitName)
-        ax0.set_xlim(0, self.WfSize-1)
+        ax0.fill_between(x, mx, mn, color=self.UnitColors[unitNo], alpha=0.35,
+                         label=self.CurUnitName)
+        ax0.set_xlim(0, self.WfSize - 1)
         ax0.set_yticklabels([])
-        ax0.grid(color = [.5, .5, .5])
-        ax0.tick_params(color = [.5, .5, .5], labelcolor=[.5, .5, .5])
-        for k in ax0.spines.values(): k.set_edgecolor([.5, .5, .5])
+        ax0.grid(color=[.5, .5, .5])
+        ax0.tick_params(color=[.5, .5, .5], labelcolor=[.5, .5, .5])
+        for k in ax0.spines.values():
+            k.set_edgecolor([.5, .5, .5])
 
-        ##### PLOT ISI HISTOGRAM #####
+        # PLOT ISI HISTOGRAM #####
         dts = np.diff(self.CurTs[p])
-        dts = dts[dts<100]
+        dts = dts[dts < 100]
 
         ld = len(dts)
         if ld > 1000:
@@ -3239,21 +3139,25 @@ class SpikeSorter(QtGui.QMainWindow):
         else:
             indx = range(ld)
 
-        ax1.hist(dts[indx], bins = 100, range = [0,100], ec='none',
-                 color=self.UnitColors[unitNo], label = self.CurUnitName)
-        ax1.tick_params(color = [.5, .5, .5], labelcolor=[.5, .5, .5])
-        for k in ax1.spines.values(): k.set_edgecolor([.5, .5, .5])
-        WfWidth = self.WfSize*1000/self.Sf
+        ax1.hist(dts[indx], bins=100, range=[0, 100], ec='none',
+                 color=self.UnitColors[unitNo], label=self.CurUnitName)
+
+        ax1.tick_params(color=[.5, .5, .5], labelcolor=[.5, .5, .5])
+
+        for k in ax1.spines.values():
+            k.set_edgecolor([.5, .5, .5])
+
+        WfWidth = self.WfSize * 1000 / self.Sf
         try:
-            collision = 100*np.flatnonzero(dts < 1.5*WfWidth ).size/np.float(dts.size)
+            collision = 100 * np.flatnonzero(dts < 1.5 * WfWidth).size / np.float(dts.size)
             # put a "percentage of collision" label
             ax1.text(0.5, 0.01, u'Collision = %0.2f %%' % collision,
-                     transform = ax1.transAxes, color = 'w', size=10, ha = 'center')
+                     transform=ax1.transAxes, color='w', size=10, ha='center')
         except:
             pass
-        ax1.set_xlim(0,100)
+        ax1.set_xlim(0, 100)
 
-        ##### PLOT AUTOCORRELATION #####
+        # PLOT AUTOCORRELATION #####
 
         ts = self.CurTs[p]
 
@@ -3278,40 +3182,40 @@ class SpikeSorter(QtGui.QMainWindow):
 
         ax2.set_xlim(-500, 500)
         #ax2.set_ylim(0, ac.max())
-        ax2.tick_params(color = [.5, .5, .5], labelcolor=[.5, .5, .5])
-        for k in ax2.spines.values(): k.set_edgecolor([.5, .5, .5])
+        ax2.tick_params(color=[.5, .5, .5], labelcolor=[.5, .5, .5])
+        for k in ax2.spines.values():
+            k.set_edgecolor([.5, .5, .5])
         ax2.set_yticklabels([])
 
         self.ChanTab['UnitFigures'][self.CurUnitName].figure.tight_layout()
         self.ChanTab['UnitFigures'][self.CurUnitName].figure.canvas.draw()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def SetWaveformVisible_proc(self):
         ''' makes the raw waveform of each unit visible or invisible'''
 
         sender = self.sender()
-        state  = sender.checkState()
-        name   = int(sender.objectName())
+        state = sender.checkState()
+        name = int(sender.objectName())
 
         # get unit name and number
         unitName = str(self.ChanTab['UnitTabsWidget'].tabText(self.ChanTab['UnitTabsWidget'].currentIndex()))
-        unitNo   = int(re.search('(?<=Unit)[0-9]{2}', unitName).group())
+        unitNo = int(re.search('(?<=Unit)[0-9]{2}', unitName).group())
 
         # get axes handle and children labels
         ax = self.ChanTab['WavesFigure'].figure.axes[0]
         childrenLabels = [str(k.get_label()) for k in ax.get_children()]
 
         # get the node to read from
-        node = self.h5file.getNode(self.CurNodeName +'/'+ unitName, 'Indx')
+        node = self.h5file.getNode(self.CurNodeName + '/' + unitName, 'Indx')
 
         # get the number of spikes to plot
         nspikes = self.NSpikesSpin.value()
 
-        if state == 2: # if checked
-            nrows    = node.nrows
+        if state == 2:  # if checked
+            nrows = node.nrows
             if nrows > nspikes:
-                unitIndx = node.read(start = 0, stop = nrows, step = nrows/nspikes)
+                unitIndx = node.read(start=0, stop=nrows, step=nrows / nspikes)
             else:
                 unitIndx = node.read()
 
@@ -3319,33 +3223,31 @@ class SpikeSorter(QtGui.QMainWindow):
             n = len(unitIndx)
 
             # create an array of Nones to append
-            nones = np.array(n*[None], ndmin=2).transpose()
+            nones = np.array(n * [None], ndmin=2).T
 
             # create the x indexes
-            Ts = np.tile(np.arange(self.WfSize),(n,1))
-            Ts = np.append(Ts, nones, axis = 1).reshape((n*(self.WfSize+1),))
+            Ts = np.tile(np.arange(self.WfSize), (n, 1))
+            Ts = np.append(Ts, nones, axis=1).reshape((n * (self.WfSize + 1),))
 
             # get the waveforms, append nones, and reshape it to a vector
-            Wf = self.CurNode.Waveforms[unitIndx,:]
-            Wf = np.append(Wf, nones, axis=1).reshape((n*(self.WfSize+1),))
+            Wf = self.CurNode.Waveforms[unitIndx, :]
+            Wf = np.append(Wf, nones, axis=1).reshape((n * (self.WfSize + 1),))
 
             # create the plot if it doesn't exists
             if unitName not in childrenLabels:
-                ax.plot(Ts, Wf,
-                        color = self.UnitColors[unitNo,:],
-                        alpha = 0.7,
-                        label = unitName)
+                ax.plot(Ts, Wf, color=self.UnitColors[unitNo, :],
+                        alpha=0.7, label=unitName)
 
             # if exists update the data
             elif unitName in childrenLabels:
                 for k in self.ChanTab['WavesFigure'].figure.axes[0].get_children():
-                    if k.get_label()=='Unit%02d' % name:
+                    if k.get_label() == 'Unit%02d' % name:
                         break
 
                 k.set_data(Ts, Wf)
                 k.set_visible(True)
 
-        elif state == 0: # if unchecked
+        elif state == 0:  # if unchecked
             for k in ax.get_children():
                 if str(k.get_label()) == unitName:
                     k.set_visible(False)
@@ -3357,8 +3259,7 @@ class SpikeSorter(QtGui.QMainWindow):
         # finally redraw the figure
         self.ChanTab['WavesFigure'].figure.canvas.draw()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def SetisMultiunit_proc(self):
 
         sender = self.sender()
@@ -3372,24 +3273,19 @@ class SpikeSorter(QtGui.QMainWindow):
         if self.h5file.getNode(nodeName).__contains__('isMultiunit'):
             self.h5file.remove_node(nodeName, 'isMultiunit')
 
-        # get the value of the checkbox and save it to "val"
-        if sender.checkState() == 2: val = True
-        else: val = False
-
         # create a new "isMultiunt" array to hold the value of the cehckbox
-        self.h5file.create_array(nodeName, 'isMultiunit', val)
+        self.h5file.create_array(nodeName, 'isMultiunit', bool(sender.checkState()))
 
         # save changes to disk
         self.h5file.flush()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def ExchangeUnitName_proc(self, initial, final):
         tb = self.ChanTab['UnitTabBarWidget']
 
         # get the names of the changed tabs
-        oldNameBgTab    = tb.tabText(final)
-        newNameBgTab    = tb.tabText(initial)
+        oldNameBgTab = tb.tabText(final)
+        newNameBgTab = tb.tabText(initial)
 
         # change the name of the background tab
         tb.setTabText(final, newNameBgTab)
@@ -3397,21 +3293,24 @@ class SpikeSorter(QtGui.QMainWindow):
         # change the name of the front tab the oldname of the unit
         tb.setTabText(tb.currentIndex(), oldNameBgTab)
 
-        ###### PROPAGATE CHANGES TO THE H5FILE #####
+        # PROPAGATE CHANGES TO THE H5FILE #####
 
         # first change the background moved unit name to "tmpUnitData"
-        self.h5file.renameNode(where = '/Spikes/Chan_%03d' % self.CurChan, name=oldNameBgTab,
-                               newname = 'tmpUnitData', overwrite=True)
+        self.h5file.renameNode(where='/Spikes/Chan_%03d' % self.CurChan,
+                               name=oldNameBgTab, newname='tmpUnitData',
+                               overwrite=True)
 
         # second change the front moved unit name to the old name of the background unit
-        self.h5file.renameNode(where = '/Spikes/Chan_%03d' % self.CurChan, name=newNameBgTab,
-                               newname = oldNameBgTab, overwrite=True)
+        self.h5file.renameNode(where='/Spikes/Chan_%03d' % self.CurChan,
+                               name=newNameBgTab, newname=oldNameBgTab,
+                               overwrite=True)
 
         # third change the background moved unit name to its new name
-        self.h5file.renameNode(where = '/Spikes/Chan_%03d' % self.CurChan, name='tmpUnitData',
-                               newname = newNameBgTab, overwrite=True)
+        self.h5file.renameNode(where='/Spikes/Chan_%03d' % self.CurChan,
+                               name='tmpUnitData', newname=newNameBgTab,
+                               overwrite=True)
 
-        ##### CHANGE THE NAME OF THE FIGURES #####
+        # CHANGE THE NAME OF THE FIGURES #####
 
         # first change the figure name of the background unit to "tmpFigName"
         for k in self.ChanTab['UnitFigures']:
@@ -3431,39 +3330,37 @@ class SpikeSorter(QtGui.QMainWindow):
                 k.setObjectName(newNameBgTab)
                 break
 
-        ##### CHANGE UNIT COLOR #####
-        self.ChangeUnitColor_proc(unitName = newNameBgTab,
-                                  color = tuple(np.append(np.int32(self.UnitColors[final]*255),255)))
-        self.ChangeUnitColor_proc(unitName = oldNameBgTab,
-                                  color = tuple(np.append(np.int32(self.UnitColors[initial]*255),255)))
+        # CHANGE UNIT COLOR #####
+        self.ChangeUnitColor_proc(unitName=newNameBgTab,
+                                  color=tuple(np.append(np.int32(self.UnitColors[final] * 255), 255)))
 
+        self.ChangeUnitColor_proc(unitName=oldNameBgTab,
+                                  color=tuple(np.append(np.int32(self.UnitColors[initial] * 255), 255)))
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def RepairUnitNames_proc(self):
 
-        unitNames = [k for k in self.CurNode.__members__ if k.find('Unit')!=-1]
+        unitNames = [k for k in self.CurNode.__members__ if 'Unit' in k]
 
-        for j,k in enumerate(unitNames):
+        for j, k in enumerate(unitNames):
             if k != 'Unit%02d' % j:
                 self.h5file.renameNode(self.CurChan, k, 'Unit%02d' % j)
 
         self.h5file.flush()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def CallMergeUnits_proc(self):
-        if not self.H5FileLoaded == True: return
+        if not self.H5FileLoaded:
+            return
         self.MergeUnitsWidget.list1.clear()
         self.MergeUnitsWidget.list2.clear()
 
-        unitsList = [k for k in self.CurNode.__members__ if k.find('Unit')!=-1]
+        unitsList = [k for k in self.CurNode.__members__ if 'Unit' in k]
         unitsList.sort()
         self.MergeUnitsWidget.list1.addItems(unitsList)
         self.MergeUnitsWidget.show()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def MergeUnits_proc(self):
 
         # get the list of units to merge
@@ -3471,7 +3368,8 @@ class SpikeSorter(QtGui.QMainWindow):
         # sort the names
         units2Merge.sort()
         # if fewer than 2 return
-        if len(units2Merge) < 2: return
+        if len(units2Merge) < 2:
+            return
 
         # store the unit indexes in a list, sort them, and trnasform it into an array
         newUnit = []
@@ -3482,7 +3380,7 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # remove all the listed units from the h5file
         for k in units2Merge:
-            self.h5file.remove_node(self.CurNodeName, k, recursive = True)
+            self.h5file.remove_node(self.CurNodeName, k, recursive=True)
 
         # create a group with the name of the first unit in the list, and
         # add all the indices of that
@@ -3497,7 +3395,7 @@ class SpikeSorter(QtGui.QMainWindow):
         # add log
         self.AddLog('%s %s merged' % (self.CurNodeName, str(units2Merge)))
 
-        ##### REMOVE ALL THE GRAPHICAL ELEMENTS #####
+        # REMOVE ALL THE GRAPHICAL ELEMENTS #####
         # get the axes to remove from
         ax = self.ChanTab['WavesFigure'].figure.axes[0]
 
@@ -3519,7 +3417,7 @@ class SpikeSorter(QtGui.QMainWindow):
 
             # eliminate the raw waveforms from the plot
             for a in ax.get_children():
-                if str(a.get_label()).find(k)!=-1:
+                if str(a.get_label()).find(k) != -1:
                     a.remove()
 
             # remove the unit from the list
@@ -3539,69 +3437,70 @@ class SpikeSorter(QtGui.QMainWindow):
         # add the merged unit to the table
         self.UnitsTable_AddUnit(units2Merge[0])
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def CallMoveUnits_proc(self):
-        if not self.H5FileLoaded == True: return
+        if not self.H5FileLoaded:
+            return
         self.MoveUnitsWidget.list.clear()
-        unitsList = [k for k in self.CurNode.__members__ if k.find('Unit')!=-1]
+        unitsList = [k for k in self.CurNode.__members__ if 'Unit' in k]
         unitsList.sort()
         self.MoveUnitsWidget.list.addItems(unitsList)
         self.MoveUnitsWidget.show()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def MoveUnits_proc(self):
 
         # first get the needed changes
-        old = []; new = []
+        old = []
+        new = []
         for k in range(self.MoveUnitsWidget.list.count()):
             if 'Unit%02d' % k != str(self.MoveUnitsWidget.list.item(k).text()):
                 old.append(str(self.MoveUnitsWidget.list.item(k).text()))
                 new.append('Unit%02d' % k)
 
         # in case no changes are needed
-        if len(old) == 0: return
+        if len(old) == 0:
+            return
 
-        ##### RENAME ALL THE UNITS AND GRAPHICAL ELEMENTS TO "_tmp" #####
+        # RENAME ALL THE UNITS AND GRAPHICAL ELEMENTS TO "_tmp" #####
         for k in self.CurNode.__members__:
-            if k.find('Unit') != -1:
+            if 'Unit' in k:
                 # rename the nodes
-                self.h5file.renameNode(self.CurNodeName, name = k, newname = k+'_tmp')
+                self.h5file.renameNode(self.CurNodeName, name=k, newname=k + '_tmp')
 
                 for key in ['UnitFigures', 'UnitCountLabel', 'DelUnitBtns',
                             'PlotRawCheck', 'UnitBtns', 'isMultiunitCheck']:
-                    self.ChanTab[key][k+'_tmp'] = self.ChanTab[key][k]
-                    self.ChanTab[key].pop(k, 0) # remove
+                    self.ChanTab[key][k + '_tmp'] = self.ChanTab[key][k]
+                    self.ChanTab[key].pop(k, 0)  # remove
 
-        for j,k in zip(old, new):
-            self.ChangeUnitName_proc(j+'_tmp', k)
+        for j, k in zip(old, new):
+            self.ChangeUnitName_proc(j + '_tmp', k)
 
         # move everything back
         for k in self.CurNode.__members__:
             if k.find('_tmp') != -1:
-                if k.replace('_tmp','') in self.CurNode.__members__:
-                    self.h5file.remove_node(self.CurNodeName, name = k)
+                if k.replace('_tmp', '') in self.CurNode.__members__:
+                    self.h5file.remove_node(self.CurNodeName, name=k)
                     for key in ['UnitFigures', 'UnitCountLabel', 'DelUnitBtns',
                                 'PlotRawCheck', 'UnitBtns', 'isMultiunitCheck']:
                         self.ChanTab[key].deleteLater()
                         self.ChanTab[key].pop(k, 0)
                 else:
-                    self.h5file.renameNode(self.CurNodeName, name = k, newname = k.replace('_tmp',''))
+                    self.h5file.renameNode(self.CurNodeName, name=k, newname=k.replace('_tmp', ''))
                     for key in ['UnitFigures', 'UnitCountLabel', 'DelUnitBtns',
                                 'PlotRawCheck', 'UnitBtns', 'isMultiunitCheck']:
-                        self.ChanTab[key][k.replace('_tmp','')] = self.ChanTab[key][k]
+                        self.ChanTab[key][k.replace('_tmp', '')] = self.ChanTab[key][k]
                         self.ChanTab[key].pop(k, 0)
 
         # save changes to disk
         self.h5file.flush()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def ChangeUnitName_proc(self, oldName, newName):
 
         # rename node
-        self.h5file.renameNode(self.CurNodeName, name = oldName, newname = newName, overwrite = True)
+        self.h5file.renameNode(self.CurNodeName, name=oldName, newname=newName,
+                               overwrite=True)
 
         # get the unit numbers from the names
         oldUnitNo = int(re.search('[0-9]{2}', oldName).group())
@@ -3615,27 +3514,25 @@ class SpikeSorter(QtGui.QMainWindow):
                     'PlotRawCheck', 'UnitBtns', 'isMultiunitCheck']:
             self.ChanTab[key][newName] = self.ChanTab[key][oldName]
             self.ChanTab[key][newName].setObjectName(newName)
-            self.ChanTab[key].pop(oldName,0)
+            self.ChanTab[key].pop(oldName, 0)
 
         # change color of the unit
-        self.ChangeUnitColor_proc(newName, color = 255*self.UnitColors[newUnitNo])
+        self.ChangeUnitColor_proc(newName, color=255 * self.UnitColors[newUnitNo])
 
-
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def CleanWavesFigure_proc(self):
         self.ChanTab['WavesFigure'].figure.canvas.draw()
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def UnitsTable_AddRow(self):
-        self.CurUnit     = self.ChanTab['UnitTabsWidget'].currentIndex()
+        self.CurUnit = self.ChanTab['UnitTabsWidget'].currentIndex()
         self.CurUnitName = self.ChanTab['UnitTabsWidget'].tabText(self.CurUnit)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def DelUnit_proc(self):
-        if not self.H5FileLoaded or not self.ChanPlotted: return
+
+        if not self.H5FileLoaded or not self.ChanPlotted:
+            return
 
         # get sender
         sender = self.sender()
@@ -3656,7 +3553,7 @@ class SpikeSorter(QtGui.QMainWindow):
         self.Unsorted = np.append(self.Unsorted, indx)
         self.Unsorted.sort()
         self.h5file.remove_node(self.CurNodeName, 'Unsorted')
-        self.h5file.remove_node(self.CurNodeName, unitName, recursive = True)
+        self.h5file.remove_node(self.CurNodeName, unitName, recursive=True)
         self.h5file.create_array(self.CurNodeName, 'Unsorted', self.Unsorted)
 
         # add log
@@ -3679,12 +3576,12 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # update the information in the overview table
         self.OverviewTab2['OverviewTable'].takeItem(self.ChansList.index(self.CurChan),
-                                                    unitNo+4)
+                                                    unitNo + 4)
 
         # eliminate the raw waveforms from the plot
         ax = self.ChanTab['WavesFigure'].figure.axes[0]
         for k in ax.get_children():
-            if str(k.get_label()).find(unitName)!=-1:
+            if str(k.get_label()).find(unitName) != -1:
                 k.remove()
                 break
 
@@ -3694,10 +3591,8 @@ class SpikeSorter(QtGui.QMainWindow):
         # replot features
         self.PlotFeatures()
 
-
-    ########################################################################################################
-
-    def ChangeUnitColor_proc(self, unitName = None, color = None):
+    #__________________________________________________________________________
+    def ChangeUnitColor_proc(self, unitName=None, color=None):
         ''' Change unit color utility function
         inputs:
             unitName : string containing the unit name
@@ -3707,26 +3602,27 @@ class SpikeSorter(QtGui.QMainWindow):
 
         if unitName in [None, False]:
             sender = self.sender()
-            unitName = str(sender.text()).replace(' ','')
+            unitName = str(sender.text()).replace(' ', '')
 
         unitNo = int(re.search('[0-9]{1,3}', unitName).group())
 
         if not np.any(color):
             c = QtGui.QColorDialog()
             color = c.getColor(sender.palette().color(1))
-            if not color.isValid(): return
+            if not color.isValid():
+                return
 
         if isinstance(color, QtGui.QColor):
-            qtColor  = color
+            qtColor = color
         else:
-            qtColor  = QtGui.QColor(color[0], color[1], color[2])
+            qtColor = QtGui.QColor(*color)
 
-        mplColor = np.array(qtColor.getRgb()[0:3])/255.0
+        mplColor = np.array(qtColor.getRgb()[0:3]) / 255.0
 
         if type(self.sender()) == QtGui.QPushButton and str(self.sender().text()).find('Unit') != -1:
             self.sender().setStyleSheet('QPushButton {background: rgb%s}' % str(qtColor.getRgb()[0:3]))
 
-        self.UnitColors[unitNo,:] = mplColor
+        self.UnitColors[unitNo, :] = mplColor
 
         # get the figure with a name equal to the current unit
         ax = self.ChanTab['UnitFigures'][unitName].figure.axes
@@ -3757,8 +3653,7 @@ class SpikeSorter(QtGui.QMainWindow):
 
         self.ChanTab['UnitTabsWidget'].tabBar().setTabTextColor(unitNo, qtColor)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def ResetChannelTab_proc(self):
         ''' reset the units tab'''
 
@@ -3778,14 +3673,16 @@ class SpikeSorter(QtGui.QMainWindow):
         # Reset WavesFigure canvas
         ax = self.ChanTab['WavesFigure'].figure.axes[0]
         ax.cla()
-        self.SampleWaveform, = ax.plot([], color= [.5,.5,.5], lw=2, animated=True)
+        self.SampleWaveform, = ax.plot([], color=[.5, .5, .5], lw=2,
+                                       animated=True)
         ax.set_ylim(-1000, 1000)
         ax.set_xlim(0, self.WfSize)
-        ax.tick_params(color = [.5, .5, .5], labelcolor=[.5, .5, .5])
-        for k in ax.spines.values(): k.set_edgecolor([.5, .5, .5])
+        ax.tick_params(color=[.5, .5, .5], labelcolor=[.5, .5, .5])
+        for k in ax.spines.values():
+            k.set_edgecolor([.5, .5, .5])
         self.Slice1Ln = ax.axvline(0, color=[.5, .5, .5])
-        self.Slice2Ln = ax.axvline(0, color=[.5, .5, .5], linestyle = '--')
-        ax.grid(color = [.5, .5, .5])
+        self.Slice2Ln = ax.axvline(0, color=[.5, .5, .5], linestyle='--')
+        ax.grid(color=[.5, .5, .5])
         self.ChanTab['WavesFigure'].figure.tight_layout()
         self.ChanTab['WavesFigure'].figure.canvas.draw()
 
@@ -3805,7 +3702,7 @@ class SpikeSorter(QtGui.QMainWindow):
         # reset the units tabbed widget
         tabs = range(self.ChanTab['UnitTabsWidget'].count())
         tabs.reverse()
-        if len(tabs)>0:
+        if len(tabs) > 0:
             for k in tabs:
                 self.ChanTab['UnitTabsWidget'].removeTab(k)
 
@@ -3826,18 +3723,22 @@ class SpikeSorter(QtGui.QMainWindow):
         self.ChanTab['FeaturesFig'].figure.canvas.draw()
 
         # delete KDTree object
-        if hasattr(self, 'XYData'):       del self.XYData
-        if hasattr(self, 'CurWaveforms'): del self.CurWaveforms
-        if hasattr(self, 'CurTs'):        del self.CurTs
+        if hasattr(self, 'XYData'):
+            del self.XYData
+
+        if hasattr(self, 'CurWaveforms'):
+            del self.CurWaveforms
+
+        if hasattr(self, 'CurTs'):
+            del self.CurTs
 
         # remove the PCA from the dictionarys
-        self.ChanTab.pop('PCA',0)
+        self.ChanTab.pop('PCA', 0)
 
         # reset the channel tab name
-        self.MainFigTab.setTabText(2,'Channel Tab')
+        self.MainFigTab.setTabText(2, 'Channel Tab')
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def SliceDraw(self):
 
         sender = self.sender()
@@ -3867,40 +3768,35 @@ class SpikeSorter(QtGui.QMainWindow):
         fig.canvas.flush_events()
         #self.ChanTab['WavesFigBG'] = fig.canvas.copy_from_bbox(ax.bbox)
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def ChangeCurrentUnit_proc(self):
         '''set the current unit'''
-        self.CurUnit     = self.ChanTab['UnitTabsWidget'].currentIndex()
+        self.CurUnit = self.ChanTab['UnitTabsWidget'].currentIndex()
         self.CurUnitName = str(self.ChanTab['UnitTabsWidget'].tabText(self.CurUnit))
         for k in range(self.What2Plot.count()):
-            if str(self.What2Plot.itemText(k))==self.CurUnitName:
+            if str(self.What2Plot.itemText(k)) == self.CurUnitName:
                 self.What2Plot.setCurrentIndex(k)
                 break
 
-    ########################################################################################################
-
+    #__________________________________________________________________________
     def MainFigTabProc(self):
         '''Change the toolbar tab acording to the selected view'''
         curtab = self.MainFigTab.currentIndex()
         curtabname = str(self.MainFigTab.tabText(curtab))
         if curtabname == 'Channels Overview' or curtabname == 'Summary Table':
             self.ToolsTab.setCurrentIndex(0)
-        elif re.search('Chan [0-9]{1,2}',curtabname):
+        elif re.search('Chan [0-9]{1,2}', curtabname):
             self.ToolsTab.setCurrentIndex(1)
 
-    ########################################################################################################
-
-    def closeEvent(self,  *event):
+    #__________________________________________________________________________
+    def closeEvent(self, *event):
         ''' reimplementation of the closeEvent that closes the h5file before killing the window'''
-        if self.H5FileLoaded == True:
+        if self.H5FileLoaded:
             self.h5file.close()
         self.deleteLater()
 
-    ########################################################################################################
-    ########################################################################################################
-    ########################################################################################################
 
+#==============================================================================
 if __name__ == '__main__':
     if not QtGui.QApplication.instance():
         app = QtGui.QApplication(sys.argv)
@@ -3908,6 +3804,3 @@ if __name__ == '__main__':
         app = QtGui.QApplication.instance()
     spikesorter = SpikeSorter()
     #sys.exit(app.exec_())
-
-
-############################################################################################################
