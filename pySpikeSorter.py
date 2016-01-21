@@ -1362,7 +1362,11 @@ class SpikeSorter(QtGui.QMainWindow):
     #__________________________________________________________________________
     def setTrash_proc(self):
         sender = self.sender()
-        chan = sender.property('Data').toPyObject()
+        try:
+            chan = sender.property('Data').toPyObject()
+        except:
+            chan = sender.property('Data')
+
         nodeName = '/Spikes/Chan_%03d' % chan
 
         indx = self.ChansList.index(chan)
