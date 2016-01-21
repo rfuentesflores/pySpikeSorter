@@ -1,8 +1,13 @@
-#!/usr/local/bin/python -i
+#!/usr/local/bin/ipython -i
 
 #---------------------------------------------------------------------- IMPORTS
 
 import os
+
+filename = os.environ.get('PYTHONSTARTUP')
+if filename and os.path.isfile(filename):
+    execfile(filename)
+
 import sys
 import re
 import tables
@@ -25,6 +30,10 @@ from scipy.spatial import cKDTree
 import datetime
 
 import m_BlackrockLib as BL
+
+#filename = os.environ.get('PYTHONSTARTUP')
+#if filename and os.path.isfile(filename):
+#    execfile(filename)
 
 
 #==============================================================================
@@ -922,7 +931,7 @@ class SpikeSorter(QtGui.QMainWindow):
         self.TimeScroll['bg'] = fig.canvas.copy_from_bbox(fig.axes[0].bbox)
 
     #__________________________________________________________________________
-    def LoadH5File(self):
+    def LoadH5File(self, h5file=None):
         ''' Loads an h5 file that contains all the information about the units:
         waveforms and timestamps '''
 
@@ -932,13 +941,14 @@ class SpikeSorter(QtGui.QMainWindow):
         else:
             d = ''
 
-        f = str(QtGui.QFileDialog.getOpenFileName(parent=self,
-                                                  caption='Select an H5 File',
-                                                  directory=d,
-                                                  filter='*.h5'))
+        if not h5file:
+            h5file = str(QtGui.QFileDialog.getOpenFileName(parent=self,
+                                                      caption='Select an H5 File',
+                                                      directory=d,
+                                                      filter='*.h5'))
 
         # in case there is not file selected
-        if not f:
+        if not h5file:
             return
 
         # set file loaded var = True
@@ -947,7 +957,7 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # try to open the file
         try:
-            self.h5file = tables.openFile(str(f), mode='r+')
+            self.h5file = tables.open_file(str(h5file), mode='r+')
         except:
             self.MsgBox.setIcon(QtGui.QMessageBox.Warning)
             self.MsgBox.setText('There was a problem opening the H5 file')
@@ -957,14 +967,14 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # set file loaded var = True
         self.H5FileLoaded = True
-        self.FilePath = os.path.split(f)[0]
+        self.FilePath = os.path.split(h5file)[0]
 
         # REPAIR THE H5FILE STRUCTURE
 
         if self.h5file.__contains__('/Chans'):
-            self.h5file.renameNode('/', 'Spikes', name='Chans')
+            self.h5file.rename_node('/', 'Spikes', name='Chans')
 
-        chanNodes = self.h5file.listNodes('/Spikes')
+        chanNodes = self.h5file.list_nodes('/Spikes')
 
         for k in chanNodes:
             where = '/Spikes/%s' % k._v_name
@@ -992,7 +1002,7 @@ class SpikeSorter(QtGui.QMainWindow):
                     self.h5file.remove_node(where=where, name=n._v_name, recursive=True)
 
         # CREATE 'isMultiunit' and 'isBursting' fields
-        chanNodes = self.h5file.listNodes('/Spikes')
+        chanNodes = self.h5file.list_nodes('/Spikes')
 
         for k in chanNodes:
             node = '/Spikes/%s' % k._v_name
@@ -1005,7 +1015,7 @@ class SpikeSorter(QtGui.QMainWindow):
                         self.h5file.create_array(parent, 'isBursting', False)
 
         # RENAME the "Indexes" field to "Indx"
-        chanNodes = self.h5file.listNodes('/Spikes')
+        chanNodes = self.h5file.list_nodes('/Spikes')
 
         for k in chanNodes:
             for n in k:
@@ -1019,7 +1029,7 @@ class SpikeSorter(QtGui.QMainWindow):
         self.h5file.flush()
 
         # REPAIR UNIT NAMES #####
-        chanNodes = self.h5file.listNodes('/Spikes')
+        chanNodes = self.h5file.list_nodes('/Spikes')
 
         for chan in chanNodes:
             unitNames = [k for k in chan.__members__ if 'Unit' in k]
@@ -1042,12 +1052,12 @@ class SpikeSorter(QtGui.QMainWindow):
         self.LogCombo.clear()
         self.LogTextBrowser.clear()
         if self.h5file.__contains__('/Log'):
-            nodes = self.h5file.listNodes('/Log')
+            nodes = self.h5file.list_nodes('/Log')
             nodeNames = [k._v_name for k in nodes]
             self.LogCombo.addItems(nodeNames)
 
         # set window title = to filename
-        self.setWindowTitle('Spike Sorter GUI ' + f)
+        self.setWindowTitle('Spike Sorter GUI ' + h5file)
 
     #__________________________________________________________________________
     def PlotOverview(self):
@@ -1056,7 +1066,7 @@ class SpikeSorter(QtGui.QMainWindow):
         channel'''
 
         # get the list of nodes inside the "Chans" group
-        chanNodes = self.h5file.listNodes('/Spikes')
+        chanNodes = self.h5file.list_nodes('/Spikes')
 
         # get the number of the channels in the file
         self.ChansList = [int(re.search('(?<=Chan_)[0-9]{3}', k._v_name).group()) for k in chanNodes]
@@ -1183,12 +1193,12 @@ class SpikeSorter(QtGui.QMainWindow):
                 continue
 
             # read the indices first:
-            if k._v_name.find('Unit') != -1:
+            if 'Unit' in k._v_name:
                 if k.Indx.nrows >= nEvents:
                     indx = k.Indx.read(start=0, stop=k.Indx.nrows, step=k.Indx.nrows / nEvents)
                 else:
                     indx = k.Indx.read()
-            elif k._v_name.find('Unsorted') != -1:
+            elif 'Unsorted' in k._v_name:
                 if k.nrows >= nEvents:
                     indx = k.read(start=0, stop=k.nrows, step=k.nrows / nEvents)
                 else:
@@ -1274,19 +1284,19 @@ class SpikeSorter(QtGui.QMainWindow):
         self.CurChan = int(self.ChanSelector.currentText())
         #nspikes = self.NSpikesSlider.value()
         self.CurNodeName = '/Spikes/Chan_%03d' % self.CurChan
-        self.CurNode = self.h5file.getNode(self.CurNodeName)
+        self.CurNode = self.h5file.get_node(self.CurNodeName)
         self.CurWaveforms = self.CurNode.Waveforms.read()
         self.CurTs = self.CurNode.TimeStamp.read()
         self.TimeScroll['HScroll'].setMaximum(int(self.CurTs[-1]))
         self.TimeScroll['HSpin'].setMaximum(int(self.CurTs[-1]))
-        self.unitNodes = [k for k in self.h5file.listNodes(self.CurNodeName) if re.search('Unit[0-9]{2}', k._v_name)]
+        self.unitNodes = [k for k in self.h5file.list_nodes(self.CurNodeName) if re.search('Unit[0-9]{2}', k._v_name)]
 
         # get the indices of the unsorted. If there are no, create one
         if not self.CurNode.__contains__('Unsorted'):
             self.Unsorted = np.arange(len(self.CurTs))
             self.h5file.create_array(self.CurNodeName, 'Unsorted', self.Unsorted)
         else:
-            self.Unsorted = self.h5file.getNode(self.CurNodeName, 'Unsorted').read()
+            self.Unsorted = self.h5file.get_node(self.CurNodeName, 'Unsorted').read()
 
         #set the unit names in the combo box
         self.What2Plot.clear()
@@ -1357,7 +1367,7 @@ class SpikeSorter(QtGui.QMainWindow):
 
         indx = self.ChansList.index(chan)
 
-        if self.h5file.getNode(nodeName).__contains__('isTrash'):
+        if self.h5file.get_node(nodeName).__contains__('isTrash'):
             self.h5file.remove_node(nodeName, 'isTrash')
 
         if sender.checkState() in [1, 2]:
@@ -1375,7 +1385,7 @@ class SpikeSorter(QtGui.QMainWindow):
         sender = self.sender()
         nodeName = '/Spikes/%s' % sender.objectName()
 
-        if self.h5file.getNode(nodeName).__contains__('isMultiunit'):
+        if self.h5file.get_node(nodeName).__contains__('isMultiunit'):
             self.h5file.remove_node(nodeName, 'isMultiunit')
 
         if sender.checkState() in [1, 2]:
@@ -1397,7 +1407,7 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # obtain parameters
         n = self.MarkTrashSpin.value()
-        chans = self.h5file.listNodes('/Spikes')
+        chans = self.h5file.list_nodes('/Spikes')
 
         # iterate over nodes in h5file; if fewer than n mark as trash
         for l, k in enumerate(chans):
@@ -1405,14 +1415,14 @@ class SpikeSorter(QtGui.QMainWindow):
             if k.TimeStamp.nrows < n:
                 self.OverviewTab1['Figure'].figure.axes[l].set_axis_bgcolor('y')
                 self.OverviewTab2['OverviewTable'].cellWidget(l, 1).setChecked(True)
-                if self.h5file.getNode('/Spikes', 'Chan_%03d' % j).__contains__('isTrash'):
+                if self.h5file.get_node('/Spikes', 'Chan_%03d' % j).__contains__('isTrash'):
                     self.h5file.remove_node('/Spikes/Chan_%03d' % j, 'isTrash')
                 self.h5file.create_array('/Spikes/Chan_%03d' % j, 'isTrash', True)
 
             else:
                 self.OverviewTab1['Figure'].figure.axes[l].set_axis_bgcolor('w')
                 self.OverviewTab2['OverviewTable'].cellWidget(l, 1).setChecked(False)
-                if self.h5file.getNode('/Spikes', 'Chan_%03d' % j).__contains__('isTrash'):
+                if self.h5file.get_node('/Spikes', 'Chan_%03d' % j).__contains__('isTrash'):
                     self.h5file.remove_node('/Spikes/Chan_%03d' % j, 'isTrash')
                 self.h5file.create_array('/Spikes/Chan_%03d' % j, 'isTrash', False)
 
@@ -1428,7 +1438,7 @@ class SpikeSorter(QtGui.QMainWindow):
         if not self.H5FileLoaded:
             return
 
-        chans = self.h5file.listNodes('/Spikes')
+        chans = self.h5file.list_nodes('/Spikes')
         chans.reverse()
         n = range(len(chans))
         n.reverse()
@@ -1452,7 +1462,7 @@ class SpikeSorter(QtGui.QMainWindow):
         if not self.H5FileLoaded or not self.ChanPlotted:
             return
 
-        for k in self.h5file.listNodes(self.CurNodeName):
+        for k in self.h5file.list_nodes(self.CurNodeName):
             if k._v_name not in ['Waveforms', 'TimeStamp', 'isTrash']:
                 self.h5file.remove_node(self.CurNodeName, k._v_name, recursive=True)
 
@@ -1483,7 +1493,7 @@ class SpikeSorter(QtGui.QMainWindow):
             return
         node = str(self.LogCombo.currentText())
         if node:
-            log = self.h5file.getNode('/Log', node).read()
+            log = self.h5file.get_node('/Log', node).read()
             self.LogTextBrowser.setText(log)
 
     #__________________________________________________________________________
@@ -1584,18 +1594,18 @@ class SpikeSorter(QtGui.QMainWindow):
 
         What2Plot = str(self.What2Plot.currentText())  # string containing what to plot
         self.CurNodeName = '/Spikes/Chan_%03d' % curchan
-        #unitNodes = [k for k in self.h5file.listNodes(self.CurNodeName) if re.search('Unit[0-9]{2}', k._v_name)]
+        #unitNodes = [k for k in self.h5file.list_nodes(self.CurNodeName) if re.search('Unit[0-9]{2}', k._v_name)]
 
         if What2Plot in ['All Waveforms', 'Sorted']:
             self.dataIndx = range(self.CurTs.size)
             pc = self.ChanTab['PCA']
         elif What2Plot == 'Unsorted':
-            self.dataIndx = self.h5file.getNode(self.CurNodeName, 'Unsorted').read()
+            self.dataIndx = self.h5file.get_node(self.CurNodeName, 'Unsorted').read()
             pc = PCA(self.CurWaveforms[self.dataIndx, :])
             pc = pc.Y
         elif re.search('Unit', What2Plot):
             self.CurUnitName = What2Plot
-            self.dataIndx = self.h5file.getNode(self.CurNodeName, What2Plot).Indx.read()
+            self.dataIndx = self.h5file.get_node(self.CurNodeName, What2Plot).Indx.read()
             pc = PCA(self.CurWaveforms[self.dataIndx, :])
             pc = pc.Y
 
@@ -1753,7 +1763,7 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # iterate over the members of that channel
         if What2Plot == 'All Waveforms':
-            nodes = self.h5file.listNodes(self.CurNodeName)
+            nodes = self.h5file.list_nodes(self.CurNodeName)
             for leaf in nodes:
                 if leaf._v_name == 'Unsorted':
                     # select only some indices to plot
@@ -1783,7 +1793,7 @@ class SpikeSorter(QtGui.QMainWindow):
                     self.UnitsTable_AddUnit(leaf._v_name)
 
         elif What2Plot == 'Sorted':
-            nodes = self.h5file.listNodes(self.CurNodeName)
+            nodes = self.h5file.list_nodes(self.CurNodeName)
             for leaf in nodes:
                 unit = re.search('(?<=Unit)[0-9]{2}', leaf._v_name)
                 if unit:
@@ -1896,12 +1906,12 @@ class SpikeSorter(QtGui.QMainWindow):
             self.dataIndx = range(self.CurTs.size)
             pc = self.ChanTab['PCA']
         elif What2Plot == 'Unsorted':
-            self.dataIndx = self.h5file.getNode(self.CurNodeName, 'Unsorted').read()
+            self.dataIndx = self.h5file.get_node(self.CurNodeName, 'Unsorted').read()
             pc = PCA(self.CurWaveforms[self.dataIndx, :])
             pc = pc.Y
         elif re.search('Unit', What2Plot):
             self.CurUnitName = What2Plot
-            self.dataIndx = self.h5file.getNode(self.CurNodeName, What2Plot).Indx.read()
+            self.dataIndx = self.h5file.get_node(self.CurNodeName, What2Plot).Indx.read()
             pc = PCA(self.CurWaveforms[self.dataIndx, :])
             pc = pc.Y
         elif What2Plot == 'Sorted':
@@ -2117,11 +2127,11 @@ class SpikeSorter(QtGui.QMainWindow):
         self.InvalidWFs = np.flatnonzero(~p)
 
         # remove the 'ValidWFs' field if it already exists
-        if self.h5file.getNode(self.CurNodeName).__contains__('ValidWFs'):
+        if self.h5file.get_node(self.CurNodeName).__contains__('ValidWFs'):
             self.h5file.remove_node(self.CurNodeName, 'ValidWFs')
 
         # remove the 'InvalidWFs' field if it already exists
-        if self.h5file.getNode(self.CurNodeName).__contains__('InvalidWFs'):
+        if self.h5file.get_node(self.CurNodeName).__contains__('InvalidWFs'):
             self.h5file.remove_node(self.CurNodeName, 'InvalidWFs')
 
         # save the ValidWFs indices to the h5file
@@ -2265,7 +2275,7 @@ class SpikeSorter(QtGui.QMainWindow):
             return
 
         # get the indices
-        indx = self.h5file.getNode('/Spikes/Chan_%03d/%s' % (self.CurChan, self.CurUnitName), 'Indx').read()
+        indx = self.h5file.get_node('/Spikes/Chan_%03d/%s' % (self.CurChan, self.CurUnitName), 'Indx').read()
         data = self.CurWaveforms[indx, :]
 
         # get line equation y = mx + n
@@ -2309,7 +2319,7 @@ class SpikeSorter(QtGui.QMainWindow):
         self.h5file.create_array(self.CurNodeName + '/' + self.CurUnitName, 'Indx', np.delete(indx, intersect))
 
         # add the remaining points to the unsorted indexes
-        self.Unsorted = self.h5file.getNode(self.CurNodeName, 'Unsorted').read()
+        self.Unsorted = self.h5file.get_node(self.CurNodeName, 'Unsorted').read()
         self.Unsorted = np.append(self.Unsorted, indx[intersect])
         self.Unsorted.sort()
 
@@ -2323,11 +2333,11 @@ class SpikeSorter(QtGui.QMainWindow):
         # update the information in the overview table
         row = self.ChanSelector.currentIndex()
         self.OverviewTab2['OverviewTable'].takeItem(row, self.CurUnit + 6)
-        lbl = QtGui.QTableWidgetItem(str(self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.nrows))
+        lbl = QtGui.QTableWidgetItem(str(self.h5file.get_node(self.CurNodeName, self.CurUnitName).Indx.nrows))
         self.OverviewTab2['OverviewTable'].setItem(row, self.CurUnit + 6, lbl)
 
         # update the information on the unit label
-        self.ChanTab['UnitCountLabel'][self.CurUnitName].setText(str(self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.nrows))
+        self.ChanTab['UnitCountLabel'][self.CurUnitName].setText(str(self.h5file.get_node(self.CurNodeName, self.CurUnitName).Indx.nrows))
 
         # replot the features
         self.PlotFeatures()
@@ -2648,7 +2658,7 @@ class SpikeSorter(QtGui.QMainWindow):
             self.What2Plot.addItem(self.CurUnitName)
 
         # add the indexes of the current unit to the h5file
-        if self.h5file.getNode(self.CurNodeName).__contains__(self.CurUnitName):
+        if self.h5file.get_node(self.CurNodeName).__contains__(self.CurUnitName):
             self.h5file.remove_node(self.CurNodeName, self.CurUnitName, recursive=True)
         self.h5file.create_group(self.CurNodeName, self.CurUnitName)
         self.h5file.create_array(self.CurNodeName + '/' + self.CurUnitName, 'Indx', self.Unsorted[p])
@@ -2659,7 +2669,7 @@ class SpikeSorter(QtGui.QMainWindow):
         self.Unsorted = self.Unsorted[~p]
 
         # update  the indexes of the unsorted units
-        if self.h5file.getNode(self.CurNodeName).__contains__('Unsorted'):
+        if self.h5file.get_node(self.CurNodeName).__contains__('Unsorted'):
             self.h5file.remove_node(self.CurNodeName, 'Unsorted')
         self.h5file.create_array(self.CurNodeName, 'Unsorted', self.Unsorted)
 
@@ -2677,7 +2687,7 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # update the overview figure
         for k in self.OverviewTab1['Figure'].figure.axes:
-            if k.get_title().find(str(self.CurChan)) != -1:
+            if str(self.CurChan) in k.get_title():
                 break
 
         self.PlotChanOverview_proc(self.CurNode, axes2Plot=k)
@@ -2737,14 +2747,14 @@ class SpikeSorter(QtGui.QMainWindow):
         nodeName = self.CurNodeName + '/' + self.CurUnitName
 
         # obtain the unit data
-        unitPts = self.h5file.getNode(nodeName, 'Indx').read()
+        unitPts = self.h5file.get_node(nodeName, 'Indx').read()
 
         # update the node containing the unit indices
         self.h5file.remove_node(nodeName, 'Indx')
         self.h5file.create_array(nodeName, 'Indx', unitPts[p])
 
         # add the remaining points to the unsorted indexes
-        self.Unsorted = self.h5file.getNode(self.CurNodeName, 'Unsorted').read()
+        self.Unsorted = self.h5file.get_node(self.CurNodeName, 'Unsorted').read()
         self.Unsorted = np.append(self.Unsorted, unitPts[~p])
         self.Unsorted.sort()
 
@@ -2767,11 +2777,11 @@ class SpikeSorter(QtGui.QMainWindow):
         # update the information in the overview table
         row = self.ChanSelector.currentIndex()
         self.OverviewTab2['OverviewTable'].takeItem(row, self.CurUnit + 6)
-        lbl = QtGui.QTableWidgetItem(str(self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.nrows))
+        lbl = QtGui.QTableWidgetItem(str(self.h5file.get_node(self.CurNodeName, self.CurUnitName).Indx.nrows))
         self.OverviewTab2['OverviewTable'].setItem(row, self.CurUnit + 6, lbl)
 
         # update the information on the unit label
-        self.ChanTab['UnitCountLabel'][self.CurUnitName].setText(str(self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.nrows))
+        self.ChanTab['UnitCountLabel'][self.CurUnitName].setText(str(self.h5file.get_node(self.CurNodeName, self.CurUnitName).Indx.nrows))
 
     #__________________________________________________________________________
     def LassoCallback_AddRegion(self, verts):
@@ -2801,7 +2811,7 @@ class SpikeSorter(QtGui.QMainWindow):
         ax = self.ChanTab['FeaturesFig'].figure.axes[0]
 
         # get the unsorted
-        self.Unsorted = self.h5file.getNode(self.CurNodeName, 'Unsorted').read()
+        self.Unsorted = self.h5file.get_node(self.CurNodeName, 'Unsorted').read()
 
         # check what is plotted on the axes
         if re.search('Waveforms', str(ax.get_title())):
@@ -2841,7 +2851,7 @@ class SpikeSorter(QtGui.QMainWindow):
                 pass
 
         # update the unit information in the file
-        unit = self.h5file.getNode(self.CurNodeName + '/' + self.CurUnitName, 'Indx').read()
+        unit = self.h5file.get_node(self.CurNodeName + '/' + self.CurUnitName, 'Indx').read()
         self.h5file.remove_node(self.CurNodeName + '/' + self.CurUnitName, 'Indx')
         # append the new indexes to the waveform and sort
         unit = np.append(unit, indx)
@@ -2855,11 +2865,11 @@ class SpikeSorter(QtGui.QMainWindow):
         # update the information in the overview table
         row = self.ChanSelector.currentIndex()
         self.OverviewTab2['OverviewTable'].takeItem(row, self.CurUnit + 6)
-        lbl = QtGui.QTableWidgetItem(str(self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.nrows))
+        lbl = QtGui.QTableWidgetItem(str(self.h5file.get_node(self.CurNodeName, self.CurUnitName).Indx.nrows))
         self.OverviewTab2['OverviewTable'].setItem(row, self.CurUnit + 6, lbl)
 
         # update the information on the unit label
-        self.ChanTab['UnitCountLabel'][self.CurUnitName].setText(str(self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.nrows))
+        self.ChanTab['UnitCountLabel'][self.CurUnitName].setText(str(self.h5file.get_node(self.CurNodeName, self.CurUnitName).Indx.nrows))
 
         # replot the unit avg waveform, histogram and autocorrelation
         self.PlotUnitFigure_proc()
@@ -2897,14 +2907,14 @@ class SpikeSorter(QtGui.QMainWindow):
         self.CurUnit = int(re.search('(?<=Unit)[0-9]{2}', ax.get_title()).group())
 
         # obtain the unit data
-        unitPts = self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.read()
+        unitPts = self.h5file.get_node(self.CurNodeName, self.CurUnitName).Indx.read()
 
         # update the node containing the unit indexes
         self.h5file.remove_node(self.CurNodeName + '/' + self.CurUnitName, 'Indx')
         self.h5file.create_array(self.CurNodeName + '/' + self.CurUnitName, 'Indx', unitPts[~p])
 
         # add the remaining points to the unsorted indexes
-        self.Unsorted = self.h5file.getNode(self.CurNodeName, 'Unsorted').read()
+        self.Unsorted = self.h5file.get_node(self.CurNodeName, 'Unsorted').read()
         self.Unsorted = np.append(self.Unsorted, unitPts[p])
         self.Unsorted.sort()
 
@@ -2918,11 +2928,11 @@ class SpikeSorter(QtGui.QMainWindow):
         # update the information in the overview table
         row = self.ChanSelector.currentIndex()
         self.OverviewTab2['OverviewTable'].takeItem(row, self.CurUnit + 6)
-        lbl = QtGui.QTableWidgetItem(str(self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.nrows))
+        lbl = QtGui.QTableWidgetItem(str(self.h5file.get_node(self.CurNodeName, self.CurUnitName).Indx.nrows))
         self.OverviewTab2['OverviewTable'].setItem(row, self.CurUnit + 6, lbl)
 
         # update the information on the unit label
-        self.ChanTab['UnitCountLabel'][self.CurUnitName].setText(str(self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.nrows))
+        self.ChanTab['UnitCountLabel'][self.CurUnitName].setText(str(self.h5file.get_node(self.CurNodeName, self.CurUnitName).Indx.nrows))
 
         # replot the features
         self.PlotFeatures()
@@ -2997,8 +3007,8 @@ class SpikeSorter(QtGui.QMainWindow):
         hlay.addStretch(1)
 
         # set the checkstate of the 'isMultiunit' check according to what is saved in the h5file
-        if self.h5file.getNode('/Spikes/Chan_%03d/Unit%02d' % (self.CurChan, unitNo)).__contains__('isMultiunit'):
-            isMultiunit = self.h5file.getNode('/Spikes/Chan_%03d/Unit%02d' % (self.CurChan, unitNo),
+        if self.h5file.get_node('/Spikes/Chan_%03d/Unit%02d' % (self.CurChan, unitNo)).__contains__('isMultiunit'):
+            isMultiunit = self.h5file.get_node('/Spikes/Chan_%03d/Unit%02d' % (self.CurChan, unitNo),
                                               'isMultiunit').read()
             if isMultiunit:
                 self.ChanTab['isMultiunitCheck'][unitName].setChecked(True)
@@ -3011,7 +3021,7 @@ class SpikeSorter(QtGui.QMainWindow):
         lbl = QtGui.QLabel('Count')
         lbl.setMaximumHeight(20)
         hlay.addWidget(lbl)
-        self.ChanTab['UnitCountLabel'][unitName] = QtGui.QLabel('%d' % self.h5file.getNode(self.CurNodeName, unitName).Indx.nrows)
+        self.ChanTab['UnitCountLabel'][unitName] = QtGui.QLabel('%d' % self.h5file.get_node(self.CurNodeName, unitName).Indx.nrows)
         self.ChanTab['UnitCountLabel'][unitName].setMaximumHeight(20)
         hlay.addWidget(self.ChanTab['UnitCountLabel'][unitName])
         hlay.addStretch(1)
@@ -3069,7 +3079,7 @@ class SpikeSorter(QtGui.QMainWindow):
                                                                        QtGui.QTableWidgetItem('Unit%02d' % unitNo))
 
         self.OverviewTab2['OverviewTable'].takeItem(row, unitNo + 6)
-        lbl = QtGui.QTableWidgetItem(str(self.h5file.getNode(self.CurNodeName, unitName).Indx.nrows))
+        lbl = QtGui.QTableWidgetItem(str(self.h5file.get_node(self.CurNodeName, unitName).Indx.nrows))
         self.OverviewTab2['OverviewTable'].setItem(row, unitNo + 6, lbl)
 
         # update the unsorted number in the overview table
@@ -3106,7 +3116,7 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # PLOT AVERAGE WAVEFORM #####
         x = range(self.WfSize)
-        p = self.h5file.getNode(self.CurNodeName, self.CurUnitName).Indx.read()
+        p = self.h5file.get_node(self.CurNodeName, self.CurUnitName).Indx.read()
         m = self.CurWaveforms[p, :].mean(axis=0)
         s = self.CurWaveforms[p, :].std(axis=0)
         mn = self.CurWaveforms[p, :].min(axis=0)
@@ -3139,10 +3149,10 @@ class SpikeSorter(QtGui.QMainWindow):
         else:
             indx = range(ld)
 
-        ax1.hist(dts[indx], bins=100, range=[0, 100], ec='none',
-                 color=self.UnitColors[unitNo], label=self.CurUnitName)
-
-        ax1.tick_params(color=[.5, .5, .5], labelcolor=[.5, .5, .5])
+        if len(dts[indx]) > 0:
+            ax1.hist(dts[indx], bins=100, range=[0, 100], ec='none',
+                     color=self.UnitColors[unitNo], label=self.CurUnitName)
+            ax1.tick_params(color=[.5, .5, .5], labelcolor=[.5, .5, .5])
 
         for k in ax1.spines.values():
             k.set_edgecolor([.5, .5, .5])
@@ -3155,6 +3165,7 @@ class SpikeSorter(QtGui.QMainWindow):
                      transform=ax1.transAxes, color='w', size=10, ha='center')
         except:
             pass
+
         ax1.set_xlim(0, 100)
 
         # PLOT AUTOCORRELATION #####
@@ -3164,6 +3175,7 @@ class SpikeSorter(QtGui.QMainWindow):
         time = 25000
 
         ts = ts[np.flatnonzero(ts < time)]
+
         ts11 = np.tile(ts, (ts.size, 1))
         ts22 = np.tile(ts, (ts.size, 1)).transpose()
         x = ts11 - ts22
@@ -3207,7 +3219,7 @@ class SpikeSorter(QtGui.QMainWindow):
         childrenLabels = [str(k.get_label()) for k in ax.get_children()]
 
         # get the node to read from
-        node = self.h5file.getNode(self.CurNodeName + '/' + unitName, 'Indx')
+        node = self.h5file.get_node(self.CurNodeName + '/' + unitName, 'Indx')
 
         # get the number of spikes to plot
         nspikes = self.NSpikesSpin.value()
@@ -3270,7 +3282,7 @@ class SpikeSorter(QtGui.QMainWindow):
         nodeName = '/Spikes/Chan_%03d/Unit%02d' % (self.CurChan, unitNo)
 
         # eliminate 'isMultiunit' f already exists
-        if self.h5file.getNode(nodeName).__contains__('isMultiunit'):
+        if self.h5file.get_node(nodeName).__contains__('isMultiunit'):
             self.h5file.remove_node(nodeName, 'isMultiunit')
 
         # create a new "isMultiunt" array to hold the value of the cehckbox
@@ -3416,9 +3428,9 @@ class SpikeSorter(QtGui.QMainWindow):
                     self.What2Plot.removeItem(n)
 
             # eliminate the raw waveforms from the plot
-            for a in ax.get_children():
-                if str(a.get_label()).find(k) != -1:
-                    a.remove()
+            for line in ax.lines:
+                if k in line.get_label():
+                    line.remove()
 
             # remove the unit from the list
             unitNo = int(re.search('[0-9]{2}', k).group())
@@ -3478,7 +3490,7 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # move everything back
         for k in self.CurNode.__members__:
-            if k.find('_tmp') != -1:
+            if '_tmp' in k:
                 if k.replace('_tmp', '') in self.CurNode.__members__:
                     self.h5file.remove_node(self.CurNodeName, name=k)
                     for key in ['UnitFigures', 'UnitCountLabel', 'DelUnitBtns',
@@ -3545,11 +3557,11 @@ class SpikeSorter(QtGui.QMainWindow):
         self.UnitsList.remove(unitNo)
 
         # get the indexes of the unit
-        indx = self.h5file.getNode(self.CurNodeName, unitName).Indx.read()
+        indx = self.h5file.get_node(self.CurNodeName, unitName).Indx.read()
 
         # get unsorted, append the indexes from the unit and update that
         # to the h5file
-        self.Unsorted = self.h5file.getNode(self.CurNodeName, 'Unsorted').read()
+        self.Unsorted = self.h5file.get_node(self.CurNodeName, 'Unsorted').read()
         self.Unsorted = np.append(self.Unsorted, indx)
         self.Unsorted.sort()
         self.h5file.remove_node(self.CurNodeName, 'Unsorted')
@@ -3580,9 +3592,9 @@ class SpikeSorter(QtGui.QMainWindow):
 
         # eliminate the raw waveforms from the plot
         ax = self.ChanTab['WavesFigure'].figure.axes[0]
-        for k in ax.get_children():
-            if str(k.get_label()).find(unitName) != -1:
-                k.remove()
+        for line in ax.lines:
+            if unitName in line.get_label():
+                line.remove()
                 break
 
         # redraw the waveforms figure
@@ -3619,7 +3631,8 @@ class SpikeSorter(QtGui.QMainWindow):
 
         mplColor = np.array(qtColor.getRgb()[0:3]) / 255.0
 
-        if type(self.sender()) == QtGui.QPushButton and str(self.sender().text()).find('Unit') != -1:
+        if isinstance(self.sender(), QtGui.QPushButton) and \
+           'Unit' in self.sender().text():
             self.sender().setStyleSheet('QPushButton {background: rgb%s}' % str(qtColor.getRgb()[0:3]))
 
         self.UnitColors[unitNo, :] = mplColor
@@ -3676,7 +3689,7 @@ class SpikeSorter(QtGui.QMainWindow):
         self.SampleWaveform, = ax.plot([], color=[.5, .5, .5], lw=2,
                                        animated=True)
         ax.set_ylim(-1000, 1000)
-        ax.set_xlim(0, self.WfSize)
+        ax.set_xlim(-2, self.WfSize + 1)
         ax.tick_params(color=[.5, .5, .5], labelcolor=[.5, .5, .5])
         for k in ax.spines.values():
             k.set_edgecolor([.5, .5, .5])

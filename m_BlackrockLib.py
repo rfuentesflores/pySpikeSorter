@@ -199,10 +199,10 @@ def addSpikes2H5(h5file, pth, bas_header, ext_header, pd = None):
         return
 
     # create a group to store spikes
-    h5file.createGroup('/','Spikes')
+    h5file.createGroup('/', 'Spikes')
 
     # get a list with the files to process
-    files = glob(os.path.join(pth,'channel*'))
+    files = glob(os.path.join(pth, 'channel*'))
     files.sort()
 
     # read some parameters from the headers
@@ -224,7 +224,7 @@ def addSpikes2H5(h5file, pth, bas_header, ext_header, pd = None):
             QtGui.QApplication.processEvents()
 
         # open binary fragment
-        fid      = open(f, 'rb')
+        fid = open(f, 'rb')
 
         waveform = []
         TS       = []
@@ -666,8 +666,9 @@ class PthSelector(dt.DataSet):
     def chDir(self, item, value):
         self.nsxFile = os.path.split(value)[0]+os.path.sep
         
-    nevFile = di.FileOpenItem ('NEV file', formats=['nev']).set_prop("display", callback=chDir)
-    nsxFile = di.FileOpenItem ('NS2 file', formats=['ns2'])
+    nevFile = di.FileOpenItem('NEV file', formats=['nev'])
+    nevFile.set_prop("display", callback=chDir)
+    nsxFile = di.FileOpenItem('NS2 file', formats=['ns2'])
 
 selectPth = PthSelector()
 

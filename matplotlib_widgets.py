@@ -1,12 +1,12 @@
 from matplotlib.widgets import Widget
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt4agg import FigureCanvasQTAgg as FigCanvas
-from matplotlib.backends.backend_qt4agg import NavigationToolbar2QTAgg as NavToolbar
+from matplotlib.backends.backend_qt4agg import NavigationToolbar2QT as NavToolbar
 from matplotlib.lines import Line2D
 from PyQt4 import QtGui
 
-################## MATPLOTLIB WIDGET TO EMBED IN QT ######################
 
+################## MATPLOTLIB WIDGET TO EMBED IN QT ###########################
 class MplWidget(FigCanvas):
     def __init__(self, parent=None):
         self.fig = Figure()
@@ -19,10 +19,10 @@ class MplWidget(FigCanvas):
                            QtGui.QSizePolicy.Expanding)
         self.updateGeometry()
 
-##########################################################################################
 
+###############################################################################
 class MyLasso(Widget):
-    def __init__(self, ax, xy, callback=None, useblit=True, color = 'k', lw = 0.5):
+    def __init__(self, ax, xy, callback=None, useblit=True, color='k', lw=0.5):
         self.axes = ax
         self.figure = ax.figure
         self.canvas = self.figure.canvas
@@ -31,7 +31,7 @@ class MyLasso(Widget):
             self.background = self.canvas.copy_from_bbox(self.axes.bbox)
 
         x, y = xy
-        self.verts = [(x,y)]
+        self.verts = [(x, y)]
         self.line = Line2D([x], [y], linestyle='-', color=color, lw=lw)
         self.axes.add_line(self.line)
         self.callback = callback
@@ -43,7 +43,7 @@ class MyLasso(Widget):
         if event.button!=1: return
         if self.verts is not None:
             self.verts.append((event.xdata, event.ydata))
-            if len(self.verts)>2:
+            if len(self.verts) > 2:
                 self.callback(self.verts)
             if self.line in self.axes.lines:
                 self.axes.lines.remove(self.line)
@@ -65,9 +65,9 @@ class MyLasso(Widget):
             self.canvas.blit(self.axes.bbox)
         else:
             self.canvas.draw_idle()
-                    
-##########################################################################################
-            
+
+
+###############################################################################
 class MyRectangleSelector:
     """
     Select a min/max range of the x axes for a matplotlib Axes
